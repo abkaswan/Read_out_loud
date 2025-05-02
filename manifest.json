@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Manga reader",
+  "version": "1.0",
+  "description": "Reads visible text on the screen using the browser's Text-to-Speech.",
+  "permissions": ["activeTab","scripting", "tabs"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+        "16": "img/icon-16.png",
+        "48": "img/icon-48.png",
+        "128": "img/icon-128.png"
+      }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["libs/tesseract.min.js", "content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["libs/tesseract.min.js","libs/tesseract-core.wasm","libs/tessdata/eng.traineddata"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

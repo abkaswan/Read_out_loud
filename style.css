@@ -1,0 +1,107 @@
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
+  color: #102a43;
+  margin: 0;
+  padding: 20px;
+  width: 320px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Headings */
+h1 {
+  font-size: 1.5em;
+  margin-bottom: 0.5em;
+  color: #334e68;
+}
+
+h6 {
+  font-size: 0.9em;
+  margin-bottom: 1.5em;
+  color: #486581;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1em;
+}
+
+label {
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  color: #243b53;
+}
+
+/* Inputs */
+select,
+input[type="range"] {
+  width: 100%;
+  padding: 0.5em;
+  border: 1px solid #bcccdc;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #102a43;
+  font-size: 1em;
+  transition: border-color 0.3s ease;
+}
+
+select:focus,
+input[type="range"]:focus {
+  border-color: #627d98;
+  outline: none;
+}
+
+input[type="number"] {
+  width: 60px;
+  padding: 5px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  text-align: center;
+  font-size: 13px;
+  margin-left: 10px;
+}
+
+/* Speed Value Display */
+#speedValue {
+  margin-top: 0.5em;
+  font-weight: 500;
+  color: #334e68;
+}
+
+/* Buttons */
+.custom-btn {
+  width: 100%;
+  padding: 0.75em;
+  margin-top: 0.75em;
+  background-color: #627d98;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.custom-btn:hover {
+  background-color: #486581;
+}
+
+/* Select2 Overrides */
+.select2-container--default .select2-selection--single {
+  background-color: #ffffff;
+  border: 1px solid #bcccdc;
+  border-radius: 8px;
+  height: 38px;
+  padding: 0.5em;
+  font-size: 1em;
+  color: #102a43;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+  height: 38px;
+  right: 10px;
+}

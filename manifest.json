@@ -3,7 +3,7 @@
   "name": "Manga reader",
   "version": "1.0",
   "description": "Reads visible text on the screen using the browser's Text-to-Speech.",
-  "permissions": ["activeTab","scripting", "tabs"],
+  "permissions": ["activeTab","scripting", "tabs","offscreen"],
   "background": {
     "service_worker": "background.js"
   },
@@ -23,7 +23,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["libs/tesseract.min.js","libs/tesseract-core.wasm","libs/tessdata/eng.traineddata"],
+      "resources": ["libs/tesseract.min.js","libs/tesseract-core.wasm","libs/tessdata/eng.traineddata","offscreen.html"],
       "matches": ["<all_urls>"]
     }
   ],

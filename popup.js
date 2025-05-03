@@ -1,41 +1,83 @@
 let voices = [];
 let voicesLoaded = false;
-let currentUtterance = null;
-let currentText = '';
-let currentIndex = 0;
+// Remove global state related to speech playback:
+// let currentUtterance = null;
+// let currentText = '';
+// let currentIndex = 0;
 
-// Initialize voice selection
+// Initialize voice selection - KEEP THIS for the UI
 function loadVoices() {
-  voices = speechSynthesis.getVoices();
-  const select = document.getElementById("voiceSelect");
-  
-  if (!voicesLoaded && voices.length > 0) {
-    select.innerHTML = '';
-    voices.forEach((voice, index) => {
-      const option = document.createElement("option");
-      option.value = index;
-      option.textContent = `${voice.name} (${voice.lang})`;
-      select.appendChild(option);
-    });
-    voicesLoaded = true; // Mark as loaded
-  } else if (voices.length === 0) {
-    console.log("Voices not loaded yet. Retrying in 500ms.");
-    setTimeout(loadVoices, 500);
-  }
+    voices = speechSynthesis.getVoices();
+    const select = document.getElementById("voiceSelect");
+
+    // Filter voices for uniqueness if needed, sometimes duplicates appear
+    const uniqueVoices = voices.filter((voice, index, self) =>
+        index === self.findIndex((v) => v.name === voice.name && v.lang === voice.lang)
+    );
+
+
+    if (!voicesLoaded && uniqueVoices.length > 0) {
+        select.innerHTML = ''; // Clear previous options
+        uniqueVoices.forEach((voice, index) => {
+            const option = document.createElement("option");
+            // Store essential details needed by the offscreen script
+            option.value = JSON.stringify({ name: voice.name, lang: voice.lang });
+            option.textContent = `${voice.name} (${voice.lang})`;
+            select.appendChild(option);
+        });
+        voicesLoaded = true; // Mark as loaded
+        console.log("Popup: Voices loaded into dropdown.");
+
+        // Initialize Select2 after options are populated
+         $('#voiceSelect').select2();
+
+    } else if (uniqueVoices.length === 0 && !voicesLoaded) {
+        console.log("Popup: Voices not loaded yet. Retrying in 500ms.");
+        // Use setTimeout to avoid blocking if voices aren't ready immediately
+        setTimeout(loadVoices, 500);
+    }
 }
 
 // Add event listener for voiceschanged
-speechSynthesis.onvoiceschanged = loadVoices;
+// Use 'once' to avoid multiple rapid calls if the event fires often initially
+speechSynthesis.addEventListener('voiceschanged', loadVoices, { once: true });
+
 
 // Directly load voices on initialization as fallback
 loadVoices();
 
-// Handle voice change
+
+// Helper function to get selected voice details
+function getSelectedVoiceDetails() {
+    const select = document.getElementById("voiceSelect");
+    try {
+        // Parse the stored JSON string
+        return JSON.parse(select.value);
+    } catch (e) {
+        console.error("Popup: Could not parse selected voice value:", select.value, e);
+        // Fallback logic: maybe return the first voice's details?
+        if (voices.length > 0) {
+             return { name: voices[0].name, lang: voices[0].lang };
+        }
+        return null; // Or handle error appropriately
+    }
+}
+
+// Handle voice change - Send update message to background
 document.getElementById("voiceSelect").addEventListener("change", (e) => {
-  if (speechSynthesis.speaking) {
-    const rate = currentUtterance.rate;
-    restartReading(rate);
-  }
+    // No need to check speechSynthesis.speaking here.
+    // Just send the update request to the background script.
+    // The background/offscreen will decide if it's relevant.
+    const rate = parseFloat(document.getElementById("speedRange").value);
+    const voiceDetails = getSelectedVoiceDetails();
+    if (voiceDetails) {
+        chrome.runtime.sendMessage({
+            action: "updateSpeechSettings",
+            rate: rate,
+            voice: voiceDetails
+        });
+        console.log("Popup: Sent update settings (voice change) to background.");
+    }
 });
 
 // Handle speed change
@@ -43,152 +85,180 @@ const speedRange = document.getElementById("speedRange");
 const speedInput = document.getElementById("speedInput");
 const speedValue = document.getElementById("speedValue");
 
+function handleSpeedChange(newValue) {
+    const rate = parseFloat(newValue);
+    if (isNaN(rate)) return;
+
+    const clampedRate = Math.min(Math.max(rate, 0.5), 2); // Clamp
+    const formattedRate = clampedRate.toFixed(1);
+
+    // Update both controls and display
+    speedRange.value = formattedRate;
+    speedInput.value = formattedRate;
+    speedValue.textContent = `${formattedRate}x`;
+
+    // Send update message to background
+    const voiceDetails = getSelectedVoiceDetails();
+     if (voiceDetails) {
+        chrome.runtime.sendMessage({
+            action: "updateSpeechSettings",
+            rate: clampedRate,
+            voice: voiceDetails
+        });
+         console.log("Popup: Sent update settings (speed change) to background.");
+    }
+}
+
 // Update numeric input and display when slider changes
 speedRange.addEventListener("input", (e) => {
-  const rate = parseFloat(e.target.value);
-  speedInput.value = rate.toFixed(1);
-  speedValue.textContent = `${rate.toFixed(1)}x`;
-  if (speechSynthesis.speaking) {
-    restartReading(rate);
-  }
+    handleSpeedChange(e.target.value);
 });
 
 // Update slider and display when numeric input changes
 speedInput.addEventListener("input", (e) => {
-  let rate = parseFloat(e.target.value);
-  if (isNaN(rate)) return;
-  rate = Math.min(Math.max(rate, 0.5), 2); // Clamp between 0.5 and 2
-  speedRange.value = rate.toFixed(1);
-  speedValue.textContent = `${rate.toFixed(1)}x`;
-  if (speechSynthesis.speaking) {
-    restartReading(rate);
-  }
+    handleSpeedChange(e.target.value);
 });
 
-// Restart reading with new voice or speed
-function restartReading(rate) {
-  
-  //...create new utterance with updated rate/voice ...
-  if (!currentText) return; //no more text or no current text
-  const newText = currentText.slice(currentIndex);
-  const utterance = new SpeechSynthesisUtterance(newText);
 
-  // Get selected voice index
-  const select = document.getElementById("voiceSelect");
-  const selectedIndex = select.value;
+// REMOVE restartReading function - background handles updates
 
-  // Validate voice index
-  const selectedVoice = voices[selectedIndex];
-  utterance.voice = selectedVoice || voices[0]; // Fallback to default voice
+// REMOVE startReadingText function - background handles starting
 
-  utterance.rate = rate || 1;
-  utterance.onboundary = (event) => {
-    const newCharindex = event.charIndex + event.charLength;
-    if(newCharindex>currentIndex){
-      currentIndex = newCharindex;
-    }
-  };
-  
-  currentUtterance = utterance;
-  speechSynthesis.cancel();//cancel current speech
-  speechSynthesis.speak(utterance);
-}
 
-// Main reading function
-function startReadingText(text) {
-  if (voices.length === 0) {
-    alert("Voices are still loading. Please wait a moment.");
-    return;
-  }
-  speechSynthesis.cancel();
-  currentText = text;
-  currentIndex = 0;
-  const utterance = new SpeechSynthesisUtterance(text);
-  
-  // Validate voice selection
-  const select = document.getElementById("voiceSelect");
-  const selectedIndex = select.value;
-  const selectedVoice = voices[selectedIndex];
-  utterance.voice = selectedVoice || voices[0]; // Fallback
-
-  utterance.rate = parseFloat(document.getElementById("speedRange").value);
-  utterance.onboundary = (event) => {
-    const newCharindex = event.charIndex + event.charLength;
-    if(newCharindex>currentIndex){
-      currentIndex = newCharindex;
-    }
-  };
-  
-  // Error handling
-  utterance.onerror = (event) => {
-    const errors = {
-        "voice-unavailable": "Selected voice unavailable.",
-        "synthesis-failed": "Speech synthesis failed.",
-    }
-    if(event.error==='interrupted'){
-      console.log("Speech interrupted internationally");
-    }
-    else{
-      alert(`Error: ${errors[event.error] || event.error}`);
-    }
-  }; 
-
-  currentUtterance = utterance;
-  speechSynthesis.speak(utterance);
-}
-
-// Stop button
-document.getElementById("stopText").addEventListener("click", () => {
-  speechSynthesis.cancel();
-  currentUtterance = null;
-  currentIndex = 0;
-});
-
-// Read selected text
+// Read selected text Button
 document.getElementById("readText").addEventListener("click", () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs[0]) {
+        if (!tabs || tabs.length === 0 || !tabs[0]) {
+            console.error("Popup: No active tab found.");
             alert("No active tab found.");
             return;
         }
         const tab = tabs[0];
-        if (tab.url.startsWith("chrome://")) {
+        if (tab.url && tab.url.startsWith("chrome://")) {
             alert("This extension cannot work on chrome:// pages.");
             return;
         }
-        const tabId = tab.id;
-      
-      // Inject content script if not already loaded
-      chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        files: ["content.js"]
-      }, () => {
-        if (chrome.runtime.lastError) {
-          alert("Error: " + chrome.runtime.lastError.message);
-          return;
+        if (!tab.id) {
+             console.error("Popup: Active tab has no ID.");
+             alert("Cannot access this tab.");
+             return;
         }
-        
-        // Send message after injection
-        chrome.tabs.sendMessage(tabId, { action: "getText" }, (response) => {
-          if (response && response.text) {
-            startReadingText(response.text);
-          }
-          if(chrome.runtime.lastError) {
-            console.error("Error: " + chrome.runtime.lastError.message);
-            alert("Unable to connect. Please try refreshing the page.");
-          }
+        const tabId = tab.id;
+
+        // Ensure content script is injected before sending message
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ["content.js"] // Assuming tesseract is already injected via manifest
+        }).then(() => {
+            console.log("Popup: Content script ensured/injected.");
+            // Send message to content script to get text
+            chrome.tabs.sendMessage(tabId, { action: "getText" }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error("Popup: Error sending 'getText' message:", chrome.runtime.lastError.message);
+                    // Attempt to reload the extension or ask user to refresh page?
+                     alert("Could not communicate with the page. Please refresh the page and try again.");
+                    return;
+                }
+
+                if (response && response.text) {
+                    console.log("Popup: Received text from content script:", response.text.substring(0, 100) + "...");
+                    // Send text to background script to start reading
+                    const rate = parseFloat(document.getElementById("speedRange").value);
+                    const voiceDetails = getSelectedVoiceDetails();
+                     if (voiceDetails) {
+                        chrome.runtime.sendMessage({
+                            action: "startReading",
+                            text: response.text,
+                            rate: rate,
+                            voice: voiceDetails // Send voice details
+                        });
+                         console.log("Popup: Sent 'startReading' message to background.");
+                    } else {
+                         console.error("Popup: No voice selected, cannot start reading.");
+                         alert("Please select a voice first.");
+                    }
+                } else if (response && response.error) {
+                     console.error("Popup: Error from content script:", response.error);
+                     alert("Error getting text from page: " + response.error);
+                } else {
+                     console.log("Popup: No text received from content script.");
+                    // Optionally inform the user, or just don't start reading
+                    // alert("No text found on the page or in selection.");
+                }
+            });
+        }).catch(err => {
+            console.error("Popup: Error injecting content script:", err);
+            alert("Error setting up connection with the page: " + err.message);
         });
-      });
     });
 });
 
-// Read images via OCR
+
+// Read images via OCR Button
 document.getElementById("readImages").addEventListener("click", () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    chrome.tabs.sendMessage(tabs[0].id, { action: "extractImageText" }, (response) => {
-      if (response && response.text) {
-        startReadingText(response.text);
-      }
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs || tabs.length === 0 || !tabs[0] || !tabs[0].id) {
+            console.error("Popup: No active tab found for OCR.");
+             alert("No active tab found.");
+            return;
+        }
+         const tabId = tabs[0].id;
+
+          // Ensure content script is injected before sending message (important for OCR setup)
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+             // Make sure both are listed if needed, though manifest usually handles this
+            files: ["libs/tesseract.min.js", "content.js"]
+        }).then(() => {
+             console.log("Popup: Content script ensured/injected for OCR.");
+             chrome.tabs.sendMessage(tabId, { action: "extractImageText" }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error("Popup: Error sending 'extractImageText' message:", chrome.runtime.lastError.message);
+                     alert("Could not communicate with the page for OCR. Please refresh the page and try again.");
+                    return;
+                }
+
+                if (response && response.text) {
+                    console.log("Popup: Received image text from content script:", response.text.substring(0, 100) + "...");
+                    // Send text to background script to start reading
+                    const rate = parseFloat(document.getElementById("speedRange").value);
+                    const voiceDetails = getSelectedVoiceDetails();
+                     if (voiceDetails) {
+                        chrome.runtime.sendMessage({
+                            action: "startReading",
+                            text: response.text,
+                            rate: rate,
+                            voice: voiceDetails // Send voice details
+                        });
+                         console.log("Popup: Sent 'startReading' (image text) message to background.");
+                    } else {
+                         console.error("Popup: No voice selected, cannot start reading image text.");
+                         alert("Please select a voice first.");
+                    }
+                } else if (response && response.error) {
+                    console.error("Popup: Error from content script OCR:", response.error);
+                    alert("Error extracting text from images: " + response.error);
+                } else {
+                    console.log("Popup: No text received from image OCR.");
+                    alert("No text found in images on the page.");
+                }
+            });
+        }).catch(err => {
+            console.error("Popup: Error injecting script for OCR:", err);
+            alert("Error setting up connection for image reading: " + err.message);
+        });
     });
-  });
 });
+
+
+// Stop button - Send stop message to background
+document.getElementById("stopText").addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "stopReading" });
+    console.log("Popup: Sent 'stopReading' message to background.");
+});
+
+
+// Initialize Select2 (moved inside loadVoices to ensure options exist first)
+// $(document).ready(function() {
+//     $('#voiceSelect').select2();
+// });

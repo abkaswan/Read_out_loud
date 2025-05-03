@@ -1,12 +1,14 @@
 let voices = [];
 let voicesLoaded = false;
-// Remove global state related to speech playback:
-// let currentUtterance = null;
-// let currentText = '';
-// let currentIndex = 0;
 
 // Initialize voice selection - KEEP THIS for the UI
 function loadVoices() {
+    // Reset voicesLoaded flag if voices array becomes empty (e.g., browser issue)
+    if (speechSynthesis.getVoices().length === 0) {
+      voicesLoaded = false;
+      console.log("Popup: Voices array empty, resetting loaded flag.");
+    }
+
     voices = speechSynthesis.getVoices();
     const select = document.getElementById("voiceSelect");
 
@@ -42,7 +44,6 @@ function loadVoices() {
 // Use 'once' to avoid multiple rapid calls if the event fires often initially
 speechSynthesis.addEventListener('voiceschanged', loadVoices, { once: true });
 
-
 // Directly load voices on initialization as fallback
 loadVoices();
 
@@ -65,7 +66,6 @@ function getSelectedVoiceDetails() {
 
 // Handle voice change - Send update message to background
 document.getElementById("voiceSelect").addEventListener("change", (e) => {
-    // No need to check speechSynthesis.speaking here.
     // Just send the update request to the background script.
     // The background/offscreen will decide if it's relevant.
     const rate = parseFloat(document.getElementById("speedRange").value);
@@ -119,146 +119,103 @@ speedInput.addEventListener("input", (e) => {
     handleSpeedChange(e.target.value);
 });
 
-
-// REMOVE restartReading function - background handles updates
-
-// REMOVE startReadingText function - background handles starting
-
+// Helper function to attempt sending a message, with injection fallback for content.js
+function sendMessageToContentScript(tabId, message, callback) {
+  console.log(`Popup: Attempting to send message (action: ${message.action}) to tab ${tabId}`);
+  chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError &&
+          chrome.runtime.lastError.message.includes("Receiving end does not exist"))
+      {
+          console.warn(`Popup: Initial sendMessage failed ('Receiving end does not exist'). Attempting to inject content script for tab ${tabId}.`);
+          // Inject ONLY content.js
+          chrome.scripting.executeScript({
+              target: { tabId: tabId },
+              files: ["content.js"] // Only inject content.js now
+          }).then(() => {
+              console.log(`Popup: Content script potentially injected for tab ${tabId}. Retrying sendMessage.`);
+              // Retry sending the message
+              chrome.tabs.sendMessage(tabId, message, callback);
+          }).catch(injectionError => {
+              console.error(`Popup: Failed to inject content script for tab ${tabId}:`, injectionError);
+              const lastError = chrome.runtime.lastError; // Store potential error from failed send before callback
+              callback({ error: `Failed to inject content script: ${injectionError.message}` });
+          });
+      } else {
+           console.log(`Popup: Initial sendMessage to tab ${tabId} completed.`);
+          callback(response); // Call original callback if no specific error or different error
+      }
+  });
+}
 
 // Read selected text Button
 document.getElementById("readText").addEventListener("click", () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || tabs.length === 0 || !tabs[0]) {
-            console.error("Popup: No active tab found.");
-            alert("No active tab found.");
-            return;
-        }
-        const tab = tabs[0];
-        if (tab.url && tab.url.startsWith("chrome://")) {
-            alert("This extension cannot work on chrome:// pages.");
-            return;
-        }
-        if (!tab.id) {
-             console.error("Popup: Active tab has no ID.");
-             alert("Cannot access this tab.");
-             return;
-        }
-        const tabId = tab.id;
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs || tabs.length === 0 || !tabs[0]) { console.error("Popup: No active tab found."); alert("No active tab found."); return; }
+      const tab = tabs[0];
+      if (tab.url && (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://"))) { alert("This extension cannot work on browser internal pages."); return; }
+      if (!tab.id) { console.error("Popup: Active tab has no ID."); alert("Cannot access this tab."); return; }
+      const tabId = tab.id;
 
-        // Ensure content script is injected before sending message
-        chrome.scripting.executeScript({
-            target: { tabId: tabId },
-            files: ["content.js"] // Assuming tesseract is already injected via manifest
-        }).then(() => {
-            console.log("Popup: Content script ensured/injected.");
-            // Send message to content script to get text
-            chrome.tabs.sendMessage(tabId, { action: "getText" }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Popup: Error sending 'getText' message:", chrome.runtime.lastError.message);
-                    // Attempt to reload the extension or ask user to refresh page?
-                     alert("Could not communicate with the page. Please refresh the page and try again.");
-                    return;
-                }
+      sendMessageToContentScript(tabId, { action: "getText" }, (response) => {
+           if (chrome.runtime.lastError) {
+              console.error("Popup: Error receiving 'getText' response:", chrome.runtime.lastError.message);
+              alert("Could not get text from the page. Please try refreshing the page. Error: " + chrome.runtime.lastError.message);
+              return;
+          }
 
-                if (response && response.text) {
-                    console.log("Popup: Received text from content script:", response.text.substring(0, 100) + "...");
-                    // Send text to background script to start reading
-                    const rate = parseFloat(document.getElementById("speedRange").value);
-                    const voiceDetails = getSelectedVoiceDetails();
-                     if (voiceDetails) {
-                        chrome.runtime.sendMessage({
-                            action: "startReading",
-                            text: response.text,
-                            rate: rate,
-                            voice: voiceDetails // Send voice details
-                        });
-                         console.log("Popup: Sent 'startReading' message to background.");
-                    } else {
-                         console.error("Popup: No voice selected, cannot start reading.");
-                         alert("Please select a voice first.");
-                    }
-                } else if (response && response.error) {
-                     console.error("Popup: Error from content script:", response.error);
-                     alert("Error getting text from page: " + response.error);
-                } else {
-                     console.log("Popup: No text received from content script.");
-                    // Optionally inform the user, or just don't start reading
-                    // alert("No text found on the page or in selection.");
-                }
-            });
-        }).catch(err => {
-            console.error("Popup: Error injecting content script:", err);
-            alert("Error setting up connection with the page: " + err.message);
-        });
-    });
+          if (response && typeof response.text === 'string') { // Check if text exists and is a string
+              if (response.text.length > 0) {
+                  console.log("Popup: Received text from content script:", response.text.substring(0, 100) + "...");
+                  const rate = parseFloat(document.getElementById("speedRange").value);
+                  const voiceDetails = getSelectedVoiceDetails();
+                  if (voiceDetails) {
+                      chrome.runtime.sendMessage({
+                          action: "startReading",
+                          text: response.text,
+                          rate: rate,
+                          voice: voiceDetails
+                      }, bgResponse => {
+                           if (chrome.runtime.lastError) {
+                              console.error("Popup: Error sending startReading to background:", chrome.runtime.lastError.message);
+                           } else {
+                              console.log("Popup: Sent 'startReading' message to background.");
+                           }
+                      });
+                  } else {
+                      console.error("Popup: No voice selected, cannot start reading.");
+                      alert("Please select a voice first.");
+                  }
+              } else {
+                   console.log("Popup: Received empty text string from content script.");
+                   alert("No text found on the page or in the selection.");
+              }
+          } else if (response && response.error) {
+              console.error("Popup: Error reported by content script:", response.error);
+              alert("Error getting text from page: " + response.error);
+          } else {
+              console.log("Popup: No text or unexpected response received from content script for 'getText'. Response:", response);
+               alert("Could not retrieve text from the page. Please ensure the page is fully loaded.");
+          }
+      });
+  });
 });
 
 
-// Read images via OCR Button
+// Read images via OCR Button - SIMPLIFIED
 document.getElementById("readImages").addEventListener("click", () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || tabs.length === 0 || !tabs[0] || !tabs[0].id) {
-            console.error("Popup: No active tab found for OCR.");
-             alert("No active tab found.");
-            return;
-        }
-         const tabId = tabs[0].id;
-
-          // Ensure content script is injected before sending message (important for OCR setup)
-        chrome.scripting.executeScript({
-            target: { tabId: tabId },
-             // Make sure both are listed if needed, though manifest usually handles this
-            files: ["libs/tesseract.min.js", "content.js"]
-        }).then(() => {
-             console.log("Popup: Content script ensured/injected for OCR.");
-             chrome.tabs.sendMessage(tabId, { action: "extractImageText" }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Popup: Error sending 'extractImageText' message:", chrome.runtime.lastError.message);
-                     alert("Could not communicate with the page for OCR. Please refresh the page and try again.");
-                    return;
-                }
-
-                if (response && response.text) {
-                    console.log("Popup: Received image text from content script:", response.text.substring(0, 100) + "...");
-                    // Send text to background script to start reading
-                    const rate = parseFloat(document.getElementById("speedRange").value);
-                    const voiceDetails = getSelectedVoiceDetails();
-                     if (voiceDetails) {
-                        chrome.runtime.sendMessage({
-                            action: "startReading",
-                            text: response.text,
-                            rate: rate,
-                            voice: voiceDetails // Send voice details
-                        });
-                         console.log("Popup: Sent 'startReading' (image text) message to background.");
-                    } else {
-                         console.error("Popup: No voice selected, cannot start reading image text.");
-                         alert("Please select a voice first.");
-                    }
-                } else if (response && response.error) {
-                    console.error("Popup: Error from content script OCR:", response.error);
-                    alert("Error extracting text from images: " + response.error);
-                } else {
-                    console.log("Popup: No text received from image OCR.");
-                    alert("No text found in images on the page.");
-                }
-            });
-        }).catch(err => {
-            console.error("Popup: Error injecting script for OCR:", err);
-            alert("Error setting up connection for image reading: " + err.message);
-        });
-    });
+console.log("Popup: 'Read Text from Images' clicked.");
+alert("Reading text from images is under development.");
+// No communication needed with content/background scripts for now
 });
 
 
 // Stop button - Send stop message to background
 document.getElementById("stopText").addEventListener("click", () => {
-    chrome.runtime.sendMessage({ action: "stopReading" });
-    console.log("Popup: Sent 'stopReading' message to background.");
+  chrome.runtime.sendMessage({ action: "stopReading" }, response => {
+      if (chrome.runtime.lastError) {
+          console.error("Popup: Error sending stopReading to background:", chrome.runtime.lastError.message);
+      } else {
+          console.log("Popup: Sent 'stopReading' message to background.");
+      }
+  });
 });
-
-
-// Initialize Select2 (moved inside loadVoices to ensure options exist first)
-// $(document).ready(function() {
-//     $('#voiceSelect').select2();
-// });

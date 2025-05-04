@@ -91,13 +91,16 @@ async function speak(text, rate, voiceDetails) {
     utterance.onboundary = (event) => {
         if (event.charIndex !== undefined) {
             // --- Simpler currentIndex update ---
-            currentIndex = event.charIndex;
-            console.log(`Boundary: charIndex=${event.charIndex}, Updated currentIndex to ${currentIndex}`);
+            currentIndex = event.charIndex; //update our internal index tracking
+            //send boundary info to background
+            chrome.runtime.sendMessage({action:'speechBoundary', charIndex: currentIndex});
+            // console.log(`Boundary: charIndex=${event.charIndex}, Updated currentIndex to ${currentIndex}`);
         }
     };
 
     utterance.onend = () => {
         console.log("Offscreen: Speech finished naturally.");
+        chrome.runtime.sendMessage({action:'speechStopped'}); //Tell background speech stopped
         currentUtterance = null;
         // Don't reset currentText/currentIndex here if we want potential resume later?
         // Let's keep resetting for now for simplicity on natural end.
@@ -113,6 +116,7 @@ async function speak(text, rate, voiceDetails) {
         }
         // Log other errors
         console.error("Offscreen: SpeechSynthesis Error:", event.error);
+        chrome.runtime.sendMessage({action:'speechStopped', error: event.error});//Report error
         currentUtterance = null;
         currentText = '';
         currentIndex = 0;
@@ -141,8 +145,6 @@ async function updateSpeechSettings(rate, voiceDetails) {
      }
 
     const remainingText = currentText.slice(currentIndex);
-    console.log(`UpdateSettings: Remaining text length: ${remainingText.length}`);
-
     if (!remainingText) {
         console.log("Offscreen: No remaining text to speak after slicing.");
         // Stop speech cleanly if nothing is left
@@ -150,6 +152,7 @@ async function updateSpeechSettings(rate, voiceDetails) {
         currentUtterance = null;
         currentText = '';
         currentIndex = 0;
+        chrome.runtime.sendMessage({action:'speechStopped'});//also clear highlight
         return;
     }
 
@@ -158,7 +161,6 @@ async function updateSpeechSettings(rate, voiceDetails) {
     const newVoice = await findVoice(voiceDetails); // Find the potentially new voice
 
     console.log(`UpdateSettings: New Rate: ${currentRate}, New Voice: ${newVoice ? newVoice.name : 'Default'}`);
-
 
     // Create a new utterance for the remaining text
     const newUtterance = new SpeechSynthesisUtterance(remainingText);
@@ -184,7 +186,11 @@ async function updateSpeechSettings(rate, voiceDetails) {
              let adjustedIndex = currentIndex + event.charIndex;
              // Clamp adjustedIndex to prevent it going beyond original text length
              adjustedIndex = Math.min(adjustedIndex, currentText.length);
-
+             // Send boundary info to background using the adjusted index
+             chrome.runtime.sendMessage({
+                action: 'speechBoundary',
+                charIndex: adjustedIndex // Send the index relative to the original text
+             });
              // Only update if it moves forward
              if(adjustedIndex > currentIndex) {
                 currentIndex = adjustedIndex;
@@ -197,6 +203,7 @@ async function updateSpeechSettings(rate, voiceDetails) {
 
     newUtterance.onend = () => {
         console.log("Offscreen: Speech finished naturally (after update).");
+        chrome.runtime.sendMessage({ action: 'speechStopped' });
         currentUtterance = null;
         currentText = '';
         currentIndex = 0;
@@ -205,9 +212,11 @@ async function updateSpeechSettings(rate, voiceDetails) {
     newUtterance.onerror = (event) => {
         if (event.error === 'interrupted') {
             console.log("Offscreen: Speech interrupted (expected during stop/update).");
+            chrome.runtime.sendMessage({ action: 'speechStopped' });
             return;
         }
         console.error("Offscreen: SpeechSynthesis Error (after update):", event.error);
+        chrome.runtime.sendMessage({ action: 'speechStopped',error: event.error });
         currentUtterance = null;
         currentText = '';
         currentIndex = 0;
@@ -231,11 +240,13 @@ async function updateSpeechSettings(rate, voiceDetails) {
 // Stop speech
 function stop() {
     console.log("Offscreen: Stopping speech.");
-    speechSynthesis.cancel();
+    speechSynthesis.cancel(); // This will trigger onerror('interrupted') which sends speechStopped
     // Clear state on explicit stop
     currentUtterance = null;
     currentText = '';
     currentIndex = 0;
+    // Send stop message immediately as well
+    chrome.runtime.sendMessage({ action: 'speechStopped' });
 }
 
 // Listen for messages from the background script

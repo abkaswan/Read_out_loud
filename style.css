@@ -89,19 +89,3 @@ input[type="number"] {
 .custom-btn:hover {
   background-color: #486581;
 }
-
-/* Select2 Overrides */
-.select2-container--default .select2-selection--single {
-  background-color: #ffffff;
-  border: 1px solid #bcccdc;
-  border-radius: 8px;
-  height: 38px;
-  padding: 0.5em;
-  font-size: 1em;
-  color: #102a43;
-}
-
-.select2-container--default .select2-selection--single .select2-selection__arrow {
-  height: 38px;
-  right: 10px;
-}

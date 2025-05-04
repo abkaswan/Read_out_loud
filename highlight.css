@@ -1,0 +1,6 @@
+.tts-highlight {
+    background-color: yellow !important; /* Use !important to help override page styles */
+    color: black !important;             /* Ensure text is readable */
+    box-shadow: 0 0 0 1px black !important; /* Optional border */
+    border-radius: 2px;
+}

@@ -1,6 +1,8 @@
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 let creatingOffscreenDocument = null; // Promise
 let activeSpeechTabId = null; // <--- STORE THE TAB ID FOR CURRENT SPEECH
+let lastVoice = null;
+let lastRate = 1.0;
 
 // --- Offscreen Document Management ---
 
@@ -91,6 +93,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                     if (tabs && tabs.length > 0 && tabs[0].id) {
                         activeSpeechTabId = tabs[0].id; // Store the tab ID
+                        lastVoice = message.voice; // Store settings
+                        lastRate = message.rate;
                         console.log(`Background: Stored active speech tab ID: ${activeSpeechTabId}`);
                         handleStartReading(message.text, message.rate, message.voice);
                         sendResponse({ success: true });
@@ -117,8 +121,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ success: true });
                 break;
 
-            case 'getPlaybackState':
-                sendResponse({ isPlaying: activeSpeechTabId !== null });
+            case 'getUiState':
+                sendResponse({ isPlaying: activeSpeechTabId !== null, voice: lastVoice, rate: lastRate });
                 break;
 
             default:
@@ -178,6 +182,8 @@ function clearActiveSpeechTab() {
 }
 
 async function handleUpdateSettings(rate, voice) {
+    lastRate = rate;
+    lastVoice = voice;
      if (await hasOffscreenDocument()) {
         await chrome.runtime.sendMessage({
              action: 'updateSettings',

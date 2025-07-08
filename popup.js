@@ -190,10 +190,36 @@ function sendMessageToContentScript(tabId, message, callback) {
 
 // Read selected text Button (Keep existing logic using the helper)
 document.addEventListener("DOMContentLoaded", () => {
-    // Check the playback state when the popup opens
-    chrome.runtime.sendMessage({ action: "getPlaybackState" }, (response) => {
-        if (response && response.isPlaying) {
-            setButtonState(true);
+    // Request the full UI state from the background script
+    chrome.runtime.sendMessage({ action: "getUiState" }, (response) => {
+        if (response) {
+            // Set play/pause button state
+            setButtonState(response.isPlaying);
+
+            // Set speed slider
+            if (response.rate) {
+                const speedRange = document.getElementById("speedRange");
+                const speedValue = document.getElementById("speedValue");
+                speedRange.value = response.rate;
+                speedValue.textContent = `${response.rate.toFixed(1)}x`;
+            }
+
+            // Set voice dropdown, but only after voices are loaded
+            if (response.voice) {
+                const voiceSelect = document.getElementById("voiceSelect");
+                const checkVoicesLoadedInterval = setInterval(() => {
+                    if (voicesLoaded && $(voiceSelect).data('select2')) {
+                        clearInterval(checkVoicesLoadedInterval);
+                        const voiceValue = JSON.stringify({ name: response.voice.name, lang: response.voice.lang });
+                        // Check if the option exists before trying to select it
+                        if ($(voiceSelect).find(`option[value='${voiceValue}']`).length) {
+                            $(voiceSelect).val(voiceValue).trigger('change.select2');
+                        } else {
+                            console.warn("Popup: Stored voice not found in current voice list.", response.voice);
+                        }
+                    }
+                }, 50); // Check every 50ms
+            }
         }
     });
 });

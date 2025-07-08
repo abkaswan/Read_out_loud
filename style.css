@@ -1,91 +1,230 @@
+:root {
+    --bg-color: #1e1e2e;
+    --primary-color: #cba6f7;
+    --container-color: #313244;
+    --text-color: #cdd6f4;
+    --text-secondary-color: #a6adc8;
+    --border-color: #45475a;
+}
+
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
-  color: #102a43;
-  margin: 0;
-  padding: 20px;
-  width: 320px;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 16px;
+    width: 320px;
 }
 
-/* Headings */
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.header {
+    text-align: center;
+}
+
 h1 {
-  font-size: 1.5em;
-  margin-bottom: 0.5em;
-  color: #334e68;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin: 0;
 }
 
-h6 {
-  font-size: 0.9em;
-  margin-bottom: 1.5em;
-  color: #486581;
+p {
+    font-size: 14px;
+    color: var(--text-secondary-color);
+    margin: 4px 0 0;
+}
+
+.card {
+    background-color: var(--container-color);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
 }
 
 .form-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 1em;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 label {
-  margin-bottom: 0.5em;
-  font-weight: 600;
-  color: #243b53;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary-color);
 }
 
-/* Inputs */
-select,
-input[type="range"] {
-  width: 100%;
-  padding: 0.5em;
-  border: 1px solid #bcccdc;
-  border-radius: 8px;
-  background-color: #ffffff;
-  color: #102a43;
-  font-size: 1em;
-  transition: border-color 0.3s ease;
+.speed-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
-select:focus,
-input[type="range"]:focus {
-  border-color: #627d98;
-  outline: none;
-}
-
-input[type="number"] {
-  width: 60px;
-  padding: 5px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  text-align: center;
-  font-size: 13px;
-  margin-left: 10px;
-}
-
-/* Speed Value Display */
 #speedValue {
-  margin-top: 0.5em;
-  font-weight: 500;
-  color: #334e68;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color);
+    width: 35px;
+    text-align: right;
 }
 
-/* Buttons */
-.custom-btn {
-  width: 100%;
-  padding: 0.75em;
-  margin-top: 0.75em;
-  background-color: #627d98;
-  color: #ffffff;
-  border: none;
-  border-radius: 8px;
-  font-size: 1em;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
 }
 
-.custom-btn:hover {
-  background-color: #486581;
+.control-btn {
+    background-color: var(--container-color);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.control-btn:hover {
+    background-color: var(--border-color);
+}
+
+.control-btn svg {
+    color: var(--text-color);
+}
+
+.play-btn svg {
+    color: var(--primary-color);
+}
+
+/* Slider Styles */
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
+    outline: none;
+    padding: 0;
+    margin: 0;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--primary-color);
+    border-radius: 50%;
+    cursor: pointer;
+    border: 3px solid var(--container-color);
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--primary-color);
+    border-radius: 50%;
+    cursor: pointer;
+    border: 3px solid var(--container-color);
+}
+
+/* --- Select2 Dark Theme Override --- */
+
+/* Main dropdown button */
+.select2-container--default .select2-selection--single {
+    background-color: var(--container-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    height: 40px;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+    color: var(--text-color);
+    line-height: 38px;
+    padding-left: 12px;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__arrow b {
+    border-color: var(--text-secondary-color) transparent transparent transparent;
+    border-style: solid;
+    border-width: 5px 4px 0 4px;
+    top: 50%;
+    left: 50%;
+    margin-left: -4px;
+    margin-top: -2px;
+}
+
+/* The dropdown panel that opens */
+.select2-dropdown {
+    background-color: var(--container-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+/* Search box inside the dropdown */
+.select2-search--dropdown {
+    padding: 8px;
+    background-color: var(--container-color);
+}
+
+.select2-search--dropdown .select2-search__field {
+    background-color: var(--bg-color) !important;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    box-sizing: border-box;
+}
+
+/* The results container */
+.select2-results__options {
+    background-color: var(--container-color);
+    color: var(--text-color);
+}
+
+/* Individual result item */
+.select2-results__option {
+    padding: 10px 12px;
+    color: var(--text-secondary-color);
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* --- STATE-SPECIFIC RULES --- */
+
+/* This styles the item that is currently selected in the list.
+   It specifically overrides the default #ddd background. */
+.select2-container--default .select2-results__option.select2-results__option--selected {
+    background-color: var(--border-color);
+    color: var(--text-color);
+}
+
+/* This styles any item that is currently being hovered over.
+   It will correctly override the --selected style above because the
+   .select2-results__option--highlighted class is applied on hover. */
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+}
+
+
+/* Message like "No results found" */
+.select2-results__message {
+  color: var(--text-secondary-color);
+  padding: 8px 12px;
+}
+
+.hidden {
+    display: none;
 }

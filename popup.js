@@ -129,9 +129,8 @@ $(document).ready(function() {
 });
 
 
-// Handle speed change (Keep existing logic)
+// Handle speed change
 const speedRange = document.getElementById("speedRange");
-const speedInput = document.getElementById("speedInput");
 const speedValue = document.getElementById("speedValue");
 
 function handleSpeedChange(newValue) {
@@ -140,7 +139,6 @@ function handleSpeedChange(newValue) {
     const clampedRate = Math.min(Math.max(rate, 0.5), 2);
     const formattedRate = clampedRate.toFixed(1);
     speedRange.value = formattedRate;
-    speedInput.value = formattedRate;
     speedValue.textContent = `${formattedRate}x`;
     const voiceDetails = getSelectedVoiceDetails(); // Get current voice for context
     if (voiceDetails) {
@@ -161,7 +159,6 @@ function handleSpeedChange(newValue) {
 }
 
 speedRange.addEventListener("input", (e) => handleSpeedChange(e.target.value));
-speedInput.addEventListener("input", (e) => handleSpeedChange(e.target.value));
 
 
 // Helper function to attempt sending a message, with injection fallback for content.js
@@ -192,52 +189,70 @@ function sendMessageToContentScript(tabId, message, callback) {
 }
 
 // Read selected text Button (Keep existing logic using the helper)
-document.getElementById("readText").addEventListener("click", () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || tabs.length === 0 || !tabs[0]) { console.error("Popup: No active tab found."); alert("No active tab found."); return; }
-        const tab = tabs[0];
-        if (tab.url && (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://"))) { alert("This extension cannot work on browser internal pages."); return; }
-        if (!tab.id) { console.error("Popup: Active tab has no ID."); alert("Cannot access this tab."); return; }
-        const tabId = tab.id;
-
-        sendMessageToContentScript(tabId, { action: "getText" }, (response) => {
-             if (chrome.runtime.lastError) { /* ... error handling ... */ return; }
-
-            if (response && typeof response.text === 'string') {
-                if (response.text.length > 0) {
-                    console.log("Popup: Received text from content script:", response.text.substring(0, 100) + "...");
-                    const rate = parseFloat(document.getElementById("speedRange").value);
-                    const voiceDetails = getSelectedVoiceDetails();
-                    if (voiceDetails) {
-                        chrome.runtime.sendMessage({
-                            action: "startReading",
-                            text: response.text,
-                            rate: rate,
-                            voice: voiceDetails
-                        }, bgResponse => { /* ... error handling ... */ });
-                    } else { /* ... error handling ... */ }
-                } else { /* ... handle empty text ... */ }
-            } else if (response && response.error) { /* ... error handling ... */ }
-            else { /* ... error handling ... */ }
-        });
-    });
-});
-
-
-// Read images via OCR Button - SIMPLIFIED (Keep existing)
-document.getElementById("readImages").addEventListener("click", () => {
-  console.log("Popup: 'Read Text from Images' clicked.");
-  alert("Reading text from images is under development.");
-});
-
-
-// Stop button - Send stop message to background (Keep existing)
-document.getElementById("stopText").addEventListener("click", () => {
-    chrome.runtime.sendMessage({ action: "stopReading" }, response => {
-        if (chrome.runtime.lastError) {
-            console.error("Popup: Error sending stopReading to background:", chrome.ṛuntime.lastError.message);
-        } else {
-            console.log("Popup: Sent 'stopReading' message to background.");
+document.addEventListener("DOMContentLoaded", () => {
+    // Check the playback state when the popup opens
+    chrome.runtime.sendMessage({ action: "getPlaybackState" }, (response) => {
+        if (response && response.isPlaying) {
+            setButtonState(true);
         }
     });
+});
+
+const playPauseBtn = document.getElementById("playPauseBtn");
+const playIcon = document.getElementById("play-icon");
+const pauseIcon = document.getElementById("pause-icon");
+
+let isPlaying = false;
+
+function setButtonState(playing) {
+    isPlaying = playing;
+    if (playing) {
+        playIcon.classList.add("hidden");
+        pauseIcon.classList.remove("hidden");
+    } else {
+        playIcon.classList.remove("hidden");
+        pauseIcon.classList.add("hidden");
+    }
+}
+
+playPauseBtn.addEventListener("click", () => {
+    if (isPlaying) {
+        chrome.runtime.sendMessage({ action: "stopReading" });
+        setButtonState(false);
+    } else {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (!tabs || tabs.length === 0 || !tabs[0]) { console.error("Popup: No active tab found."); alert("No active tab found."); return; }
+            const tab = tabs[0];
+            if (tab.url && (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://"))) { alert("This extension cannot work on browser internal pages."); return; }
+            if (!tab.id) { console.error("Popup: Active tab has no ID."); alert("Cannot access this tab."); return; }
+            const tabId = tab.id;
+
+            sendMessageToContentScript(tabId, { action: "getText" }, (response) => {
+                if (chrome.runtime.lastError) { /* ... error handling ... */ return; }
+
+                if (response && typeof response.text === 'string') {
+                    if (response.text.length > 0) {
+                        const rate = parseFloat(document.getElementById("speedRange").value);
+                        const voiceDetails = getSelectedVoiceDetails();
+                        if (voiceDetails) {
+                            chrome.runtime.sendMessage({
+                                action: "startReading",
+                                text: response.text,
+                                rate: rate,
+                                voice: voiceDetails
+                            });
+                            setButtonState(true);
+                        } else { /* ... error handling ... */ }
+                    } else { /* ... handle empty text ... */ }
+                } else if (response && response.error) { /* ... error handling ... */ }
+                else { /* ... error handling ... */ }
+            });
+        });
+    }
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "speechStopped") {
+        setButtonState(false);
+    }
 });

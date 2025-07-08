@@ -73,6 +73,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                  console.log("Background: Received speechStopped from offscreen.", message.error ? `Error: ${message.error}` : "");
                  // Tell content script to clear highlight and clear our tracked tab ID
                  clearActiveSpeechTab();
+                 // Also notify the popup to reset its button state
+                 chrome.runtime.sendMessage({ action: 'speechStopped' }).catch(err => console.warn("Could not inform popup of speech stop:", err.message));
                 break;
              // We don't expect other actions from offscreen currently
              default:
@@ -113,6 +115,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // No need to update tab ID, just forward settings
                 handleUpdateSettings(message.rate, message.voice);
                 sendResponse({ success: true });
+                break;
+
+            case 'getPlaybackState':
+                sendResponse({ isPlaying: activeSpeechTabId !== null });
                 break;
 
             default:

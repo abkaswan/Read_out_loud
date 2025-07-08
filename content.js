@@ -83,7 +83,6 @@ function getTextToSend() {
 }
 
 // --- Highlighting Logic ---
-
 function clearHighlight() {
     if (currentHighlightElement) {
         try {

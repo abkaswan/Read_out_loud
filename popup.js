@@ -190,6 +190,13 @@ function sendMessageToContentScript(tabId, message, callback) {
 
 // Read selected text Button (Keep existing logic using the helper)
 document.addEventListener("DOMContentLoaded", () => {
+    const instructionsHeader = document.querySelector(".instructions-header");
+    const instructionsList = document.querySelector(".instructions-list");
+
+    instructionsHeader.addEventListener("click", () => {
+        instructionsList.classList.toggle("hidden");
+    });
+
     // Request the full UI state from the background script
     chrome.runtime.sendMessage({ action: "getUiState" }, (response) => {
         if (response) {

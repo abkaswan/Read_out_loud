@@ -229,26 +229,57 @@ input[type="range"]::-moz-range-thumb {
     display: none;
 }
 
-.instructions, .shortcuts {
+.info-card {
+    padding: 0;
+}
+
+.instructions {
+    padding: 0; /* Remove padding from the container div */
+}
+
+.instructions-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 12px 16px; /* Reduced padding */
+}
+
+.instructions-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.instructions-header svg {
+    color: var(--primary-color);
+}
+
+.instructions-list {
+    padding: 0 16px 12px 36px; /* Reduced padding */
+    margin: 0;
+    color: var(--text-secondary-color);
+    font-size: 13px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 12px; /* Reduced padding */
+}
+
+.instructions-list li {
+    margin-bottom: 6px;
+}
+
+
+.shortcuts {
     font-size: 13px;
 }
 
-.instructions h3, .shortcuts h3 {
+.shortcuts h3 {
     font-size: 14px;
     font-weight: 600;
     color: var(--primary-color);
     margin-top: 0;
     margin-bottom: 8px;
-}
-
-.instructions ul {
-    padding-left: 20px;
-    margin: 0;
-    color: var(--text-secondary-color);
-}
-
-.instructions ul li {
-    margin-bottom: 4px;
 }
 
 .shortcuts p {

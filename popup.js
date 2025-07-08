@@ -282,3 +282,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         setButtonState(false);
     }
 });
+
+const refreshBtn = document.getElementById("refreshBtn");
+
+refreshBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "refreshState" }, () => {
+        // Reset UI elements to their default state
+        setButtonState(false);
+        const speedRange = document.getElementById("speedRange");
+        const speedValue = document.getElementById("speedValue");
+        speedRange.value = 1;
+        speedValue.textContent = "1.0x";
+        // You might need to reload voices or reset the voice selector
+        // depending on the desired refresh behavior.
+        // For a simple reset, we just update the UI.
+        console.log("Popup: Refresh button clicked, state reset.");
+    });
+});
+

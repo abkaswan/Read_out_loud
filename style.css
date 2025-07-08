@@ -228,3 +228,62 @@ input[type="range"]::-moz-range-thumb {
 .hidden {
     display: none;
 }
+
+.instructions, .shortcuts {
+    font-size: 13px;
+}
+
+.instructions h3, .shortcuts h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+.instructions ul {
+    padding-left: 20px;
+    margin: 0;
+    color: var(--text-secondary-color);
+}
+
+.instructions ul li {
+    margin-bottom: 4px;
+}
+
+.shortcuts p {
+    margin: 4px 0;
+    color: var(--text-secondary-color);
+}
+
+.shortcuts b {
+    color: var(--text-color);
+}
+
+.download-container {
+    margin-top: 8px;
+    text-align: center;
+}
+
+.download-btn {
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    width: 100%;
+    transition: background-color 0.2s ease;
+}
+
+.download-btn:hover {
+    background-color: #b48ead; /* A slightly darker shade for hover */
+}
+
+.download-btn:disabled {
+    background-color: var(--border-color);
+    color: var(--text-secondary-color);
+    cursor: not-allowed;
+}

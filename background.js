@@ -125,6 +125,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ isPlaying: activeSpeechTabId !== null, voice: lastVoice, rate: lastRate });
                 break;
 
+            case 'refreshState':
+                console.log("Background: Received refreshState. Stopping any active speech.");
+                handleStopReading(); // This will trigger the full cleanup via speechStopped
+                // Reset stored settings
+                lastVoice = null;
+                lastRate = 1.0;
+                sendResponse({ success: true });
+                break;
+
             default:
                 console.warn("Background: Received unknown message action from Popup/Content:", message.action);
                 sendResponse({ success: false, error: "Unknown action" });
@@ -133,6 +142,66 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Return true for async responses (like startReading)
      return message.action === 'startReading' && !isFromOffscreen;
+});
+
+// --- Keyboard Shortcut Commands ---
+chrome.commands.onCommand.addListener((command) => {
+    console.log(`Background: Command received: ${command}`);
+    switch (command) {
+        case 'toggle-play-pause':
+            // This logic needs to be smart: if playing, stop; if not playing, start.
+            // We can check `activeSpeechTabId` to know the state.
+            if (activeSpeechTabId !== null) {
+                console.log("Background: Command toggling to PAUSE.");
+                handleStopReading();
+            } else {
+                console.log("Background: Command toggling to PLAY.");
+                // To play, we need the text from the content script.
+                // This is tricky because we don't have the popup's context.
+                // We'll message the content script of the *active* tab.
+                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                    if (tabs && tabs.length > 0 && tabs[0].id) {
+                        const tabId = tabs[0].id;
+                        // We need to inject content.js if it's not there
+                        chrome.tabs.sendMessage(tabId, { action: "getText" }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.warn("Background: Failed to get text for play command, maybe content script not injected.", chrome.runtime.lastError.message);
+                                // Attempt to inject and retry
+                                chrome.scripting.executeScript({
+                                    target: { tabId: tabId },
+                                    files: ["content.js"]
+                                }).then(() => {
+                                    chrome.tabs.sendMessage(tabId, { action: "getText" }, (response) => {
+                                        if (response && typeof response.text === 'string' && response.text.length > 0) {
+                                            handleStartReading(response.text, lastRate, lastVoice);
+                                        } else {
+                                            console.error("Background: Failed to get text even after injection.");
+                                        }
+                                    });
+                                }).catch(err => console.error("Background: Failed to inject content script on command:", err));
+                                return;
+                            }
+
+                            if (response && typeof response.text === 'string' && response.text.length > 0) {
+                                activeSpeechTabId = tabId; // Set the active tab
+                                handleStartReading(response.text, lastRate, lastVoice);
+                            } else {
+                                console.log("Background: No text received from content script for play command.");
+                            }
+                        });
+                    }
+                });
+            }
+            break;
+        case 'refresh-state':
+            console.log("Background: Command to REFRESH state.");
+            handleStopReading();
+            lastVoice = null;
+            lastRate = 1.0;
+            // Also notify the popup if it's open
+            chrome.runtime.sendMessage({ action: 'refreshState' }).catch(err => {});
+            break;
+    }
 });
 
 // --- Action Handlers ---

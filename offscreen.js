@@ -212,7 +212,7 @@ async function updateSpeechSettings(rate, voiceDetails) {
     newUtterance.onerror = (event) => {
         if (event.error === 'interrupted') {
             console.log("Offscreen: Speech interrupted (expected during stop/update).");
-            chrome.runtime.sendMessage({ action: 'speechStopped' });
+            // DO NOT send a 'speechStopped' message here, as it's an expected interruption.
             return;
         }
         console.error("Offscreen: SpeechSynthesis Error (after update):", event.error);

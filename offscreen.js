@@ -5,6 +5,47 @@ let currentIndex = 0;
 let currentRate = 1.0;
 let currentVoice = null; // Store the SpeechSynthesisVoice object
 
+// --- PDF Parsing Logic ---
+async function processPdf(pdfUrl) {
+    try {
+        if (typeof pdfjsLib === 'undefined') {
+            console.error("pdf.js library not loaded in offscreen document.");
+            throw new Error("PDF library failed to load.");
+        }
+        pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('libs/pdfjs/pdf.worker.min.js');
+
+        const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+        const numPages = pdf.numPages;
+
+        for (let i = 1; i <= numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(' ');
+            
+            // Send each page's text back to the background script
+            chrome.runtime.sendMessage({
+                action: 'pdfPageTextExtracted',
+                pageNumber: i,
+                text: pageText
+            });
+        }
+
+        // Signal completion
+        chrome.runtime.sendMessage({
+            action: 'pdfProcessingComplete',
+            totalPages: numPages
+        });
+
+    } catch (error) {
+        console.error('Error processing PDF in offscreen:', error);
+        chrome.runtime.sendMessage({
+            action: 'pdfProcessingFailed',
+            error: error.message
+        });
+    }
+}
+
+
 // Function to get voices and ensure they are loaded
 function loadVoices() {
     return new Promise((resolve) => {
@@ -272,7 +313,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ success: false, error: err.message });
             });
         return true; // Indicate async response
-    } else {
+    } else if (message.action === 'processPdf') {
+        processPdf(message.url);
+        sendResponse({ success: true });
+        return false; // It will send messages back as it processes
+    }
+    else {
         console.warn("Offscreen: Unknown message action:", message.action);
         sendResponse({ success: false, error: "Unknown action" });
          return false; // Synchronous

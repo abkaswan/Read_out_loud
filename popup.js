@@ -1,3 +1,31 @@
+// --- UI Elements ---
+const webReaderContainer = document.getElementById('web-reader-container');
+const pdfReaderContainer = document.getElementById('pdf-reader-container');
+
+// Web Reader UI
+const playPauseBtn = document.getElementById("playPauseBtn");
+const playIcon = document.getElementById("play-icon");
+const pauseIcon = document.getElementById("pause-icon");
+const refreshBtn = document.getElementById("refreshBtn");
+const voiceSelect = document.getElementById("voiceSelect");
+const speedRange = document.getElementById("speedRange");
+const speedValue = document.getElementById("speedValue");
+
+// PDF Reader UI
+const pdfInitialView = document.getElementById('pdf-initial-view');
+const pdfLoadingView = document.getElementById('pdf-loading-view');
+const pdfReaderView = document.getElementById('pdf-reader-view');
+const readPdfBtn = document.getElementById('readPdfBtn');
+const pdfPlayPauseBtn = document.getElementById("pdf-playPauseBtn");
+const pdfPlayIcon = document.getElementById("pdf-play-icon");
+const pdfPauseIcon = document.getElementById("pdf-pause-icon");
+const pdfPrevBtn = document.getElementById('pdf-prevBtn');
+const pdfNextBtn = document.getElementById('pdf-nextBtn');
+const pdfStopBtn = document.getElementById('pdf-stopBtn');
+const pdfCurrentPage = document.getElementById('pdf-current-page');
+const pdfTotalPages = document.getElementById('pdf-total-pages');
+
+
 let voices = [];
 let voicesLoaded = false;
 let uniqueVoices = []; // Make uniqueVoices accessible for fallback
@@ -130,9 +158,6 @@ $(document).ready(function() {
 
 
 // Handle speed change
-const speedRange = document.getElementById("speedRange");
-const speedValue = document.getElementById("speedValue");
-
 function handleSpeedChange(newValue) {
     const rate = parseFloat(newValue);
     if (isNaN(rate)) return;
@@ -197,6 +222,21 @@ document.addEventListener("DOMContentLoaded", () => {
         instructionsList.classList.toggle("hidden");
     });
 
+    // Check if the current tab is a PDF
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0];
+        if (tab && tab.url && tab.url.toLowerCase().endsWith('.pdf')) {
+            // Show PDF UI
+            webReaderContainer.classList.add('hidden');
+            pdfReaderContainer.classList.remove('hidden');
+        } else {
+            // Show Web Reader UI
+            webReaderContainer.classList.remove('hidden');
+            pdfReaderContainer.classList.add('hidden');
+        }
+    });
+
+
     // Request the full UI state from the background script
     chrome.runtime.sendMessage({ action: "getUiState" }, (response) => {
         if (response) {
@@ -230,10 +270,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 });
-
-const playPauseBtn = document.getElementById("playPauseBtn");
-const playIcon = document.getElementById("play-icon");
-const pauseIcon = document.getElementById("pause-icon");
 
 let isPlaying = false;
 
@@ -285,12 +321,38 @@ playPauseBtn.addEventListener("click", () => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const loadingText = pdfLoadingView.querySelector('p');
+
     if (message.action === "speechStopped") {
         setButtonState(false);
+        // Also update PDF play button if it's visible
+        pdfPlayIcon.classList.remove("hidden");
+        pdfPauseIcon.classList.add("hidden");
+
+    } else if (message.action === 'pdfProcessingStarted') {
+        pdfInitialView.classList.add('hidden');
+        pdfLoadingView.classList.remove('hidden');
+        loadingText.textContent = 'Processing PDF...';
+
+    } else if (message.action === 'pdfProcessingProgress') {
+        loadingText.textContent = `Processing page ${message.currentPage} of ${message.totalPages}...`;
+
+    } else if (message.action === 'pdfProcessingComplete') {
+        pdfLoadingView.classList.add('hidden');
+        pdfReaderView.classList.remove('hidden');
+        pdfTotalPages.textContent = message.totalPages;
+        pdfCurrentPage.textContent = 1; // Start at page 1
+
+    } else if (message.action === 'pdfProcessingFailed') {
+        pdfLoadingView.classList.add('hidden');
+        pdfInitialView.classList.remove('hidden');
+        alert(`Failed to process PDF: ${message.error}`); // Show error to user
+
+    } else if (message.action === 'pdfPageUpdate') {
+        pdfCurrentPage.textContent = message.currentPage;
+        // Update play/pause button state if needed
     }
 });
-
-const refreshBtn = document.getElementById("refreshBtn");
 
 refreshBtn.addEventListener("click", () => {
     chrome.runtime.sendMessage({ action: "refreshState" }, () => {
@@ -305,5 +367,35 @@ refreshBtn.addEventListener("click", () => {
         // For a simple reset, we just update the UI.
         console.log("Popup: Refresh button clicked, state reset.");
     });
+});
+
+// --- PDF Reader Event Listeners ---
+readPdfBtn.addEventListener('click', () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0];
+        if (tab && tab.url) {
+            chrome.runtime.sendMessage({ action: 'readPdf', url: tab.url });
+        }
+    });
+});
+
+pdfPlayPauseBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'togglePdfPlayPause' });
+});
+
+pdfPrevBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'pdfPrevPage' });
+});
+
+pdfNextBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'pdfNextPage' });
+});
+
+pdfStopBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'stopPdfReading' });
+    // Switch back to initial view
+    pdfReaderView.classList.add('hidden');
+    pdfLoadingView.classList.add('hidden');
+    pdfInitialView.classList.remove('hidden');
 });
 

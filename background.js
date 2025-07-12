@@ -4,12 +4,19 @@ let activeSpeechTabId = null; // <--- STORE THE TAB ID FOR CURRENT SPEECH
 let lastVoice = null;
 let lastRate = 1.0;
 
+// --- PDF Reading State ---
+let pdfState = {
+    url: null,
+    text_pages: [],
+    currentPage: 0,
+    isPlaying: false
+};
+
+
 // --- Offscreen Document Management ---
 
 // Function to check if an offscreen document exists
 async function hasOffscreenDocument() {
-    // Check all windows controlled by the service worker to see if one exists
-    // Filter documents by path to prevent conflicts with other offscreen documents.
     const matchedClients = await clients.matchAll();
     return matchedClients.some(
         (c) => c.url === chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)
@@ -19,16 +26,14 @@ async function hasOffscreenDocument() {
 
 // Function to create the offscreen document
 async function setupOffscreenDocument() {
-    // If we don't have an offscreen document, create one.
     if (!(await hasOffscreenDocument())) {
-        // Create the document
         if (creatingOffscreenDocument) {
             await creatingOffscreenDocument;
         } else {
             creatingOffscreenDocument = chrome.offscreen.createDocument({
                 url: OFFSCREEN_DOCUMENT_PATH,
-                reasons: [chrome.offscreen.Reason.USER_MEDIA, chrome.offscreen.Reason.AUDIO_PLAYBACK], // Or just AUDIO_PLAYBACK if USER_MEDIA isn't needed
-                justification: 'Needed for text-to-speech synthesis',
+                reasons: [chrome.offscreen.Reason.USER_MEDIA, chrome.offscreen.Reason.AUDIO_PLAYBACK],
+                justification: 'Needed for text-to-speech and PDF processing',
             });
             await creatingOffscreenDocument;
             creatingOffscreenDocument = null;
@@ -39,84 +44,78 @@ async function setupOffscreenDocument() {
     }
 }
 
-// Function to close the offscreen document
-async function closeOffscreenDocument() {
-    if (!(await hasOffscreenDocument())) {
-        console.log("Background: No offscreen document to close.");
-        return;
-    }
-    await chrome.offscreen.closeDocument();
-    console.log("Background: Offscreen document closed.");
-}
-
 // --- Message Handling ---
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Check if message is from offscreen document or elsewhere (e.g., popup)
     const isFromOffscreen = sender.url === chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
 
     if (isFromOffscreen) {
         // Handle messages FROM Offscreen
         switch (message.action) {
             case 'speechBoundary':
-                // Relay to content script if we know the active tab
                 if (activeSpeechTabId !== null) {
-                    // console.log(`Background: Relaying boundary index ${message.charIndex} to tab ${activeSpeechTabId}`); // Verbose
                     chrome.tabs.sendMessage(activeSpeechTabId, {
                         action: 'highlightCharacterIndex',
                         charIndex: message.charIndex
-                    }).catch(err => { // Catch error if tab is closed
+                    }).catch(err => {
                          console.warn(`Background: Failed to send highlight to tab ${activeSpeechTabId}: ${err.message}. Clearing tab ID.`);
-                         clearActiveSpeechTab(); // Clear if tab is gone
+                         clearActiveSpeechTab();
                     });
                 }
                 break;
             case 'speechStopped':
                  console.log("Background: Received speechStopped from offscreen.", message.error ? `Error: ${message.error}` : "");
-                 // Tell content script to clear highlight and clear our tracked tab ID
                  clearActiveSpeechTab();
-                 // Also notify the popup to reset its button state
                  chrome.runtime.sendMessage({ action: 'speechStopped' }).catch(err => console.warn("Could not inform popup of speech stop:", err.message));
                 break;
-             // We don't expect other actions from offscreen currently
+            
+            // PDF processing messages from offscreen
+            case 'pdfPageTextExtracted':
+                pdfState.text_pages[message.pageNumber - 1] = message.text;
+                // Optional: Could add more granular progress here if needed
+                break;
+            case 'pdfProcessingComplete':
+                chrome.runtime.sendMessage({
+                    action: 'pdfProcessingComplete',
+                    totalPages: message.totalPages
+                });
+                break;
+            case 'pdfProcessingFailed':
+                chrome.runtime.sendMessage({
+                    action: 'pdfProcessingFailed',
+                    error: message.error
+                });
+                handleStopPdfReading(); // Clean up
+                break;
+
              default:
                  console.warn("Background: Received unknown message action from Offscreen:", message.action);
         }
-         // No response needed for messages from offscreen
     } else {
         // Handle messages FROM Popup or Content Script
         switch (message.action) {
             case 'startReading':
-                console.log("Background: Received startReading");
-                // Store the tab ID from the sender (popup gets it via query)
-                // We assume the popup message originates from interaction with the active tab
                 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                     if (tabs && tabs.length > 0 && tabs[0].id) {
-                        activeSpeechTabId = tabs[0].id; // Store the tab ID
-                        lastVoice = message.voice; // Store settings
+                        activeSpeechTabId = tabs[0].id;
+                        lastVoice = message.voice;
                         lastRate = message.rate;
-                        console.log(`Background: Stored active speech tab ID: ${activeSpeechTabId}`);
                         handleStartReading(message.text, message.rate, message.voice);
                         sendResponse({ success: true });
                     } else {
                         console.error("Background: Could not get active tab ID for startReading.");
-                         activeSpeechTabId = null; // Ensure it's cleared
+                        activeSpeechTabId = null;
                         sendResponse({ success: false, error: "Could not identify active tab" });
                     }
                 });
-                return true; // Indicate async response due to tabs.query
+                return true;
 
             case 'stopReading':
-                console.log("Background: Received stopReading from popup");
-                 // Don't clear activeSpeechTabId here, let the 'speechStopped' message from offscreen handle it
-                 // after cancel() propagates. Just send the stop command.
                 handleStopReading();
                 sendResponse({ success: true });
                 break;
 
             case 'updateSpeechSettings':
-                console.log("Background: Received updateSpeechSettings");
-                // No need to update tab ID, just forward settings
                 handleUpdateSettings(message.rate, message.voice);
                 sendResponse({ success: true });
                 break;
@@ -126,11 +125,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
 
             case 'refreshState':
-                console.log("Background: Received refreshState. Stopping any active speech.");
-                handleStopReading(); // This will trigger the full cleanup via speechStopped
-                // Reset stored settings
+                handleStopReading();
+                handleStopPdfReading();
                 lastVoice = null;
                 lastRate = 1.0;
+                sendResponse({ success: true });
+                break;
+
+            // --- PDF Actions ---
+            case 'readPdf':
+                handleReadPdf(message.url);
+                sendResponse({ success: true });
+                break;
+            case 'togglePdfPlayPause':
+                handleTogglePdfPlayPause();
+                sendResponse({ success: true });
+                break;
+            case 'pdfPrevPage':
+                handleChangePdfPage(pdfState.currentPage - 1);
+                sendResponse({ success: true });
+                break;
+            case 'pdfNextPage':
+                handleChangePdfPage(pdfState.currentPage + 1);
+                sendResponse({ success: true });
+                break;
+            case 'stopPdfReading':
+                handleStopPdfReading();
                 sendResponse({ success: true });
                 break;
 
@@ -139,114 +159,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ success: false, error: "Unknown action" });
         }
     }
-
-    // Return true for async responses (like startReading)
-     return message.action === 'startReading' && !isFromOffscreen;
+    return true; // Keep channel open for async responses
 });
 
-// --- Keyboard Shortcut Commands ---
-chrome.commands.onCommand.addListener((command) => {
-    console.log(`Background: Command received: ${command}`);
-    switch (command) {
-        case 'toggle-play-pause':
-            // This logic needs to be smart: if playing, stop; if not playing, start.
-            // We can check `activeSpeechTabId` to know the state.
-            if (activeSpeechTabId !== null) {
-                console.log("Background: Command toggling to PAUSE.");
-                handleStopReading();
-            } else {
-                console.log("Background: Command toggling to PLAY.");
-                // To play, we need the text from the content script.
-                // This is tricky because we don't have the popup's context.
-                // We'll message the content script of the *active* tab.
-                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                    if (tabs && tabs.length > 0 && tabs[0].id) {
-                        const tabId = tabs[0].id;
-                        // We need to inject content.js if it's not there
-                        chrome.tabs.sendMessage(tabId, { action: "getText" }, (response) => {
-                            if (chrome.runtime.lastError) {
-                                console.warn("Background: Failed to get text for play command, maybe content script not injected.", chrome.runtime.lastError.message);
-                                // Attempt to inject and retry
-                                chrome.scripting.executeScript({
-                                    target: { tabId: tabId },
-                                    files: ["content.js"]
-                                }).then(() => {
-                                    chrome.tabs.sendMessage(tabId, { action: "getText" }, (response) => {
-                                        if (response && typeof response.text === 'string' && response.text.length > 0) {
-                                            handleStartReading(response.text, lastRate, lastVoice);
-                                        } else {
-                                            console.error("Background: Failed to get text even after injection.");
-                                        }
-                                    });
-                                }).catch(err => console.error("Background: Failed to inject content script on command:", err));
-                                return;
-                            }
-
-                            if (response && typeof response.text === 'string' && response.text.length > 0) {
-                                activeSpeechTabId = tabId; // Set the active tab
-                                handleStartReading(response.text, lastRate, lastVoice);
-                            } else {
-                                console.log("Background: No text received from content script for play command.");
-                            }
-                        });
-                    }
-                });
-            }
-            break;
-        case 'refresh-state':
-            console.log("Background: Command to REFRESH state.");
-            handleStopReading();
-            lastVoice = null;
-            lastRate = 1.0;
-            // Also notify the popup if it's open
-            chrome.runtime.sendMessage({ action: 'refreshState' }).catch(err => {});
-            break;
-    }
-});
 
 // --- Action Handlers ---
 
 async function handleStartReading(text, rate, voice) {
-    await setupOffscreenDocument(); // Ensure offscreen document is ready
-    // Send message to the offscreen document to start speaking
-    await chrome.runtime.sendMessage({
+    await setupOffscreenDocument();
+    chrome.runtime.sendMessage({
         action: 'speak',
         text: text,
         rate: rate,
-        voice: voice, // Send voice details (name, lang)
-        target: 'offscreen' // Optional: target hint for clarity
+        voice: voice,
+        target: 'offscreen'
     }).catch(err => {
         console.error("Background: Error sending 'speak' message to offscreen:", err);
-        clearActiveSpeechTab(); // clear tab if we can't even start
+        clearActiveSpeechTab();
     });
-    console.log("Background: Sent 'speak' message to offscreen.");
 }
 
 async function handleStopReading() {
-    // Don't necessarily close the document immediately, just stop speech
     if (await hasOffscreenDocument()) {
-        await chrome.runtime.sendMessage({
+        chrome.runtime.sendMessage({
              action: 'stop',
              target: 'offscreen'
-        }).catch(err => {
-            console.error("Background: Error sending 'stop' message to offscreen:", err);
-        });
-        console.log("Background: Sent 'stop' message to offscreen.");
-        // Don't clear activeSpeechTabId here, wait for confirmation via 'speechStopped'
+        }).catch(err => console.error("Background: Error sending 'stop' message to offscreen:", err));
     } else {
-        console.log("Background: Cannot stop, no offscreen document.");
-        // If no offscreen doc, we assume speech isn't happening, clear the tab ID
         clearActiveSpeechTab();
     }
 }
 
-// --- Helper to clear highlighting and tab ID ---
 function clearActiveSpeechTab() {
     if (activeSpeechTabId !== null) {
-        console.log(`Background: Clearing highlight and active tab ID: ${activeSpeechTabId}`);
         chrome.tabs.sendMessage(activeSpeechTabId, { action: 'clearHighlight' })
-            .catch(err => console.warn(`Background: Failed to send clearHighlight to tab ${activeSpeechTabId}: ${err.message}. Tab might be closed.`));
-        activeSpeechTabId = null; // Clear the stored ID
+            .catch(err => console.warn(`Background: Failed to send clearHighlight to tab ${activeSpeechTabId}: ${err.message}.`));
+        activeSpeechTabId = null;
     }
 }
 
@@ -254,31 +202,153 @@ async function handleUpdateSettings(rate, voice) {
     lastRate = rate;
     lastVoice = voice;
      if (await hasOffscreenDocument()) {
-        await chrome.runtime.sendMessage({
+        chrome.runtime.sendMessage({
              action: 'updateSettings',
              rate: rate,
              voice: voice,
              target: 'offscreen'
-        }).catch(err => {
-            console.error("Background: Error sending 'updateSettings' message to offscreen:", err);
-        });
-        console.log("Background: Sent 'updateSettings' message to offscreen.");
-    } else {
-        console.log("Background: Cannot update settings, no offscreen document.");
+        }).catch(err => console.error("Background: Error sending 'updateSettings' message to offscreen:", err));
     }
 }
 
+// --- PDF Handling Logic ---
 
-// Optional: Add listeners for cleanup, e.g., when the extension is updated/disabled
-chrome.runtime.onSuspend.addListener(() => {
-  console.log("Background: Extension suspending.");
-  closeOffscreenDocument(); // Clean up on suspension
-});
-// Add listener for tab closure to potentially clear state
+async function handleReadPdf(url) {
+    await setupOffscreenDocument();
+    chrome.runtime.sendMessage({ action: 'pdfProcessingStarted' });
+
+    pdfState.url = url;
+    pdfState.isPlaying = false;
+    pdfState.currentPage = 0;
+    pdfState.text_pages = [];
+
+    chrome.runtime.sendMessage({
+        action: 'processPdf',
+        url: url,
+        target: 'offscreen'
+    });
+}
+
+function handleTogglePdfPlayPause() {
+    pdfState.isPlaying = !pdfState.isPlaying;
+    if (pdfState.isPlaying) {
+        playCurrentPdfPage();
+    } else {
+        handleStopReading();
+    }
+}
+
+function handleChangePdfPage(newPage) {
+    if (newPage >= 0 && newPage < pdfState.text_pages.length) {
+        pdfState.currentPage = newPage;
+        chrome.runtime.sendMessage({ action: 'pdfPageUpdate', currentPage: newPage + 1 });
+        if (pdfState.isPlaying) {
+            playCurrentPdfPage();
+        }
+    }
+}
+
+function playCurrentPdfPage() {
+    const text = pdfState.text_pages[pdfState.currentPage];
+    if (text) {
+        handleStartReading(text, lastRate, lastVoice);
+    }
+}
+
+function handleStopPdfReading() {
+    handleStopReading();
+    pdfState.url = null;
+    pdfState.text_pages = [];
+    pdfState.currentPage = 0;
+    pdfState.isPlaying = false;
+}
+
+// Helper function to send a message to the content script, injecting it if necessary.
+function sendMessageToContentScript(tabId, message, callback) {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+        // Check for the specific error indicating the content script is not injected.
+        if (chrome.runtime.lastError && chrome.runtime.lastError.message.includes("Receiving end does not exist")) {
+            console.warn(`Background: Content script not found in tab ${tabId}. Attempting to inject.`);
+            // Inject the content script programmatically.
+            chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['content.js']
+            }).then(() => {
+                console.log(`Background: Injected content script into tab ${tabId}. Retrying message.`);
+                // After injecting, retry sending the message.
+                chrome.tabs.sendMessage(tabId, message, callback);
+            }).catch(err => {
+                console.error(`Background: Failed to inject content script into tab ${tabId}:`, err);
+                if (callback) {
+                    callback({ error: `Failed to inject script: ${err.message}` });
+                }
+            });
+        } else {
+            // If there was no error or a different error, pass the response to the callback.
+            if (callback) {
+                callback(response);
+            }
+        }
+    });
+}
+
+
+// --- Cleanup Listeners ---
 chrome.tabs.onRemoved.addListener(tabId => {
     if (tabId === activeSpeechTabId) {
-        console.log(`Background: Active speech tab ${tabId} closed. Stopping speech and clearing state.`);
-        handleStopReading(); //Attempt to stop offscreen speech
-        //clearActiveSpeechTab();  // handleStopReading should trigger this via speechStopped
+        handleStopReading();
+        if (pdfState.url) {
+            handleStopPdfReading();
+        }
+    }
+});
+
+// --- Command Listener for Keyboard Shortcuts ---
+chrome.commands.onCommand.addListener((command, tab) => {
+    console.log(`Command received: ${command}`);
+    switch (command) {
+        case "toggle-play-pause":
+            // Check if it's a PDF first
+            if (pdfState.url && pdfState.text_pages.length > 0) {
+                handleTogglePdfPlayPause();
+            } else {
+                // Standard web page toggle
+                if (activeSpeechTabId !== null) {
+                    handleStopReading();
+                } else {
+                    // This is the "play" part, which needs to get text from the content script
+                    if (tab.id) {
+                        sendMessageToContentScript(tab.id, { action: "getText" }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.error("Error sending getText message after injection attempt:", chrome.runtime.lastError.message);
+                                return;
+                            }
+                            if (response && response.text && response.text.length > 0) {
+                                activeSpeechTabId = tab.id; // Set active tab
+                                // Use last known settings or defaults
+                                handleStartReading(response.text, lastRate || 1.0, lastVoice || null);
+                                // Inform the popup to update its state
+                                chrome.runtime.sendMessage({ action: 'speechStarted' }).catch(e => {});
+                            } else if (response && response.error) {
+                                console.error("Received an error from content script:", response.error);
+                            } else {
+                                console.log("No text found or received to read.");
+                            }
+                        });
+                    }
+                }
+            }
+            break;
+        case "refresh-state":
+            handleStopReading();
+            handleStopPdfReading();
+            lastVoice = null;
+            lastRate = 1.0;
+            // Inform the popup to update its state
+            chrome.runtime.sendMessage({ action: 'speechStopped' }).catch(e => {});
+            console.log("State refreshed via command.");
+            break;
+        default:
+            console.warn(`Unhandled command: ${command}`);
     }
 });

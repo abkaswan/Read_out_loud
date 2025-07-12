@@ -22,6 +22,12 @@ body {
     gap: 16px;
 }
 
+#web-reader-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
 .header {
     text-align: center;
 }
@@ -317,4 +323,44 @@ input[type="range"]::-moz-range-thumb {
     background-color: var(--border-color);
     color: var(--text-secondary-color);
     cursor: not-allowed;
+}
+
+/* PDF Reader Styles */
+.pdf-progress {
+    text-align: center;
+    font-size: 16px;
+    color: var(--text-secondary-color);
+    margin-bottom: 16px;
+}
+
+.pdf-progress span {
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.stop-btn {
+    background-color: #f38ba8; /* A reddish color for stop */
+}
+
+.stop-btn:hover {
+    background-color: #e67c9a;
+}
+
+.loader {
+  border: 4px solid var(--border-color);
+  border-left-color: var(--primary-color);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }

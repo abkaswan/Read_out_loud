@@ -24,12 +24,17 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["offscreen.html"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "offscreen.html",
+        "libs/pdfjs/pdf.worker.min.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self';"
   },
   "commands": {
     "toggle-play-pause": {

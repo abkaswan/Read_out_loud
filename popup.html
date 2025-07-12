@@ -7,66 +7,115 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="libs/select2.min.css">
 </head>
-<body>
     <div class="container">
-        <div class="header">
-            <h1>Read Aloud</h1>
-        </div>
-
-        <div class="card info-card">
-            <div class="instructions">
-                <div class="instructions-header">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg>
-                    <h3>How to use</h3>
-                </div>
-                <ul class="instructions-list hidden">
-                    <li>Select any text on the page</li>
-                    <li>Click Play to read selected text</li>
-                    <li>Or click Play without selection to read entire page</li>
-                </ul>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="form-group">
-                <label for="voiceSelect">Voice</label>
-                <select id="voiceSelect" style="width: 100%;"></select>
+        <!-- Regular Web Page UI -->
+        <div id="web-reader-container">
+            <div class="header">
+                <h1>Read Aloud</h1>
             </div>
 
-            <div class="form-group">
-                <label for="speedRange">Speed</label>
-                <div class="speed-control">
-                    <input type="range" id="speedRange" min="0.5" max="2" value="1" step="0.1">
-                    <span id="speedValue">1.0x</span>
+            <div class="card info-card">
+                <div class="instructions">
+                    <div class="instructions-header">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg>
+                        <h3>How to use</h3>
+                    </div>
+                    <ul class="instructions-list hidden">
+                        <li>Select any text on the page</li>
+                        <li>Click Play to read selected text</li>
+                        <li>Or click Play without selection to read entire page</li>
+                    </ul>
                 </div>
             </div>
-        </div>
 
-        <div class="controls">
-            <button id="playPauseBtn" class="control-btn">
-                <svg id="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M8 5v14l11-7z"></path></svg>
-                <svg id="pause-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" class="hidden"><path d="M6 6h4v12H6zm8 0h4v12h-4z"></path></svg>
-            </button>
-            <button id="refreshBtn" class="control-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>
-            </button>
-        </div>
+            <div class="card">
+                <div class="form-group">
+                    <label for="voiceSelect">Voice</label>
+                    <select id="voiceSelect" style="width: 100%;"></select>
+                </div>
+                <div class="form-group">
+                    <label for="speedRange">Speed</label>
+                    <div class="speed-control">
+                        <input type="range" id="speedRange" min="0.5" max="2" value="1" step="0.1">
+                        <span id="speedValue">1.0x</span>
+                    </div>
+                </div>
+            </div>
 
-        <div class="card">
-            <div class="shortcuts">
-                <h3>Keyboard Shortcuts:</h3>
-                <p><b>Play/Pause:</b> Ctrl + Shift + P</p>
-                <p><b>Refresh:</b> Ctrl + Shift + S</p>
+            <div class="controls">
+                <button id="playPauseBtn" class="control-btn">
+                    <svg id="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M8 5v14l11-7z"></path></svg>
+                    <svg id="pause-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" class="hidden"><path d="M6 6h4v12H6zm8 0h4v12h-4z"></path></svg>
+                </button>
+                <button id="refreshBtn" class="control-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>
+                </button>
+            </div>
+
+            <div class="card">
+                <div class="shortcuts">
+                    <h3>Keyboard Shortcuts:</h3>
+                    <p><b>Play/Pause:</b> Ctrl + Shift + P</p>
+                    <p><b>Refresh:</b> Ctrl + Shift + S</p>
+                </div>
+            </div>
+
+            <div class="download-container">
+                <button id="downloadBtn" class="download-btn" disabled>Download MP3</button>
             </div>
         </div>
 
-        <div class="download-container">
-            <button id="downloadBtn" class="download-btn" disabled>Download MP3</button>
+        <!-- PDF Reader UI (hidden by default) -->
+        <div id="pdf-reader-container" class="hidden">
+            <div class="header">
+                <h1>PDF Reader</h1>
+            </div>
+
+            <div id="pdf-initial-view">
+                <div class="card">
+                    <p>This appears to be a PDF file.</p>
+                    <button id="readPdfBtn" class="download-btn">Read this PDF</button>
+                </div>
+            </div>
+
+            <div id="pdf-loading-view" class="hidden">
+                <div class="card">
+                    <p>Processing PDF...</p>
+                    <div class="loader"></div>
+                </div>
+            </div>
+
+            <div id="pdf-reader-view" class="hidden">
+                <div class="card">
+                    <div class="pdf-progress">
+                        <span id="pdf-current-page">1</span> / <span id="pdf-total-pages">...</span>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button id="pdf-prevBtn" class="control-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"></path></svg>
+                    </button>
+                    <button id="pdf-playPauseBtn" class="control-btn">
+                        <svg id="pdf-play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M8 5v14l11-7z"></path></svg>
+                        <svg id="pdf-pause-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" class="hidden"><path d="M6 6h4v12H6zm8 0h4v12h-4z"></path></svg>
+                    </button>
+                    <button id="pdf-nextBtn" class="control-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"></path></svg>
+                    </button>
+                </div>
+                 <div class="controls">
+                    <button id="pdf-stopBtn" class="control-btn stop-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M6 6h12v12H6z"></path></svg>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
     <script src="libs/jquery-3.6.0.min.js"></script>
     <script src="libs/select2.min.js"></script>
+    <script src="libs/pdfjs/pdf.min.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>

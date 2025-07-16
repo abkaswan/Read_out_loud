@@ -61,7 +61,6 @@ function extractVisibleTextAndNodes() {
         charCounter += processedText.length;
     }
 
-     console.log(`Content Script: Extracted ${textNodeMap.length} text nodes. Total chars: ${fullText.length}`);
     return fullText.trim();
 }
 
@@ -69,15 +68,9 @@ function extractVisibleTextAndNodes() {
 function getTextToSend() {
     const selectedText = window.getSelection().toString().trim();
     if (selectedText) {
-        console.log("Content Script: Using selected text.");
-        // For selected text, highlighting is harder as we don't have the node map easily.
-        // For simplicity, we won't highlight selected text in this version.
-        // Clear any previous node map if switching from full-page reading.
         textNodeMap = [];
         return selectedText;
     } else {
-        console.log("Content Script: No selection, extracting all visible text.");
-        // Extract text and build the node map for highlighting
         return extractVisibleTextAndNodes();
     }
 }
@@ -105,7 +98,6 @@ function highlightWordAtCharIndex(charIndex) {
     clearHighlight(); // Remove previous highlight first
 
     if (textNodeMap.length === 0) {
-        // console.log("Highlight: No textNodeMap available (likely reading selected text). Cannot highlight.");
         return; // Can't highlight if we don't have the map
     }
 
@@ -123,7 +115,6 @@ function highlightWordAtCharIndex(charIndex) {
     }
 
     if (!targetEntry || indexWithinNode === -1) {
-        console.warn(`Highlight: Could not find node for charIndex ${charIndex}`);
         return;
     }
 
@@ -149,7 +140,6 @@ function highlightWordAtCharIndex(charIndex) {
 
     // Basic validation: ensure start <= end and indices are valid
     if (wordStart < 0 || wordEnd > text.length || wordStart >= wordEnd) {
-        console.warn(`Highlight: Invalid word boundaries calculated (Start: ${wordStart}, End: ${wordEnd}) for index ${indexWithinNode} in text:`, text);
         return; // Don't highlight if boundaries are weird
     }
 
@@ -181,19 +171,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
         if (request.action === 'getText') {
             const text = getTextToSend(); // This now potentially builds textNodeMap
-            console.log("Content Script: Sending text:", text.substring(0, 100) + "...");
             sendResponse({ text: text });
         } else if (request.action === 'highlightCharacterIndex') {
-            // console.log("Content Script: Received highlight request for index:", request.charIndex); // Verbose log
             highlightWordAtCharIndex(request.charIndex);
             // No response needed for highlight commands
         } else if (request.action === 'clearHighlight') {
-            console.log("Content Script: Received request to clear highlight.");
             clearHighlight();
             // No response needed
         }
         else {
-            console.log("Content Script: Unknown action", request.action);
         }
     } catch (error) {
         console.error("Content Script: Error processing message:", request.action, error);
@@ -205,5 +191,3 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Return true only for async potential (getText might be considered async if extraction is slow)
     return request.action === 'getText';
 });
-
-console.log("Content script loaded (with highlighting).");

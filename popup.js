@@ -12,18 +12,27 @@ const speedRange = document.getElementById("speedRange");
 const speedValue = document.getElementById("speedValue");
 
 // PDF Reader UI
-const pdfInitialView = document.getElementById('pdf-initial-view');
 const pdfLoadingView = document.getElementById('pdf-loading-view');
 const pdfReaderView = document.getElementById('pdf-reader-view');
-const readPdfBtn = document.getElementById('readPdfBtn');
 const pdfPlayPauseBtn = document.getElementById("pdf-playPauseBtn");
 const pdfPlayIcon = document.getElementById("pdf-play-icon");
 const pdfPauseIcon = document.getElementById("pdf-pause-icon");
 const pdfPrevBtn = document.getElementById('pdf-prevBtn');
 const pdfNextBtn = document.getElementById('pdf-nextBtn');
-const pdfStopBtn = document.getElementById('pdf-stopBtn');
-const pdfCurrentPage = document.getElementById('pdf-current-page');
-const pdfTotalPages = document.getElementById('pdf-total-pages');
+const pdfCurrentPageInput = document.getElementById('pdf-current-page-input');
+const pageByPageBtn = document.getElementById('page-by-page-btn');
+const continuousBtn = document.getElementById('continuous-btn');
+const readingProgressBar = document.getElementById('reading-progress-bar');
+const readingProgressPercent = document.getElementById('reading-progress-percent');
+const pdfTotalPagesInfo = document.getElementById('pdf-total-pages-info');
+const pdfReadTime = document.getElementById('pdf-read-time');
+const pdfCurrentPageInfo = document.getElementById('pdf-current-page-info');
+const bookmarkBtn = document.getElementById('bookmark-btn');
+const bookmarkedPagesList = document.getElementById('bookmarked-pages-list');
+const pdfVoiceSelect = document.getElementById('pdf-voiceSelect');
+const pdfSpeedRange = document.getElementById('pdf-speedRange');
+const pdfSpeedValue = document.getElementById('pdf-speedValue');
+const pdfRefreshBtn = document.getElementById('pdf-refreshBtn');
 
 
 let voices = [];
@@ -37,56 +46,42 @@ function loadVoices() {
         voicesLoaded = false;
         voices = [];
         uniqueVoices = [];
-        console.log("Popup: Voices array became empty, resetting loaded flag.");
     }
 
     voices = speechSynthesis.getVoices();
-    const select = document.getElementById("voiceSelect");
-
-    // Ensure select exists before proceeding
-    if (!select) {
-        console.error("Popup: voiceSelect element not found during loadVoices.");
-        return;
-    }
+    const selects = [document.getElementById("voiceSelect"), document.getElementById("pdf-voiceSelect")];
 
     uniqueVoices = voices.filter((voice, index, self) =>
         index === self.findIndex((v) => v.name === voice.name && v.lang === voice.lang)
     );
 
     if (!voicesLoaded && uniqueVoices.length > 0) {
-        // Check if Select2 is already initialized, destroy if needed before re-populating
-        if ($(select).data('select2')) {
-             console.log("Popup: Destroying existing Select2 instance before reloading voices.");
-            $(select).select2('destroy');
-            select.innerHTML = ''; // Clear options after destroying
-        } else {
-             select.innerHTML = ''; // Clear options if not initialized
-        }
+        selects.forEach(select => {
+            if (select) {
+                if ($(select).data('select2')) {
+                    $(select).select2('destroy');
+                    select.innerHTML = '';
+                } else {
+                    select.innerHTML = '';
+                }
 
+                uniqueVoices.forEach((voice) => {
+                    const option = document.createElement("option");
+                    option.value = JSON.stringify({ name: voice.name, lang: voice.lang });
+                    option.textContent = `${voice.name} (${voice.lang})`;
+                    select.appendChild(option);
+                });
 
-        uniqueVoices.forEach((voice, index) => {
-            const option = document.createElement("option");
-            option.value = JSON.stringify({ name: voice.name, lang: voice.lang });
-            option.textContent = `${voice.name} (${voice.lang})`;
-            select.appendChild(option);
+                try {
+                    $(select).select2();
+                } catch (e) {
+                    console.error("Popup: Error initializing Select2:", e);
+                }
+            }
         });
         voicesLoaded = true;
-        console.log("Popup: Voices loaded into dropdown.");
-        try {
-            // Initialize Select2 *after* options are populated
-            $(select).select2();
-            console.log("Popup: Select2 initialized.");
-        } catch(e) {
-            console.error("Popup: Error initializing Select2:", e);
-        }
     } else if (uniqueVoices.length === 0 && !voicesLoaded) {
-        console.log("Popup: Voices not loaded yet. Retrying in 500ms.");
         setTimeout(loadVoices, 500);
-    } else if (voicesLoaded && uniqueVoices.length > 0) {
-         // Voices already loaded, maybe Select2 needs re-initialization?
-         // This path might be hit if voiceschanged fires again after initial load.
-         // Consider if re-init is necessary or if the current state is fine.
-         // console.log("Popup: Voices already loaded, skipping re-population.");
     }
 }
 
@@ -98,23 +93,18 @@ loadVoices();
 
 
 // Helper function to get selected voice details
-function getSelectedVoiceDetails() {
-    const select = document.getElementById("voiceSelect");
+function getSelectedVoiceDetails(isPdf = false) {
+    const select = document.getElementById(isPdf ? "pdf-voiceSelect" : "voiceSelect");
     if (!select || select.value === null || select.value === undefined || select.value === "") {
-        console.error("Popup: Voice select element not ready or has no value.");
-        // Fallback to first available unique voice if possible
         if (uniqueVoices.length > 0) {
-             console.log("Popup: Falling back to first unique voice.");
              return { name: uniqueVoices[0].name, lang: uniqueVoices[0].lang };
         }
-        return null; // No fallback possible
+        return null;
     }
     try {
         return JSON.parse(select.value);
     } catch (e) {
-        console.error("Popup: Could not parse selected voice value:", select.value, e);
         if (uniqueVoices.length > 0) {
-            console.log("Popup: Falling back to first unique voice after parse error.");
              return { name: uniqueVoices[0].name, lang: uniqueVoices[0].lang };
         }
         return null;
@@ -122,154 +112,149 @@ function getSelectedVoiceDetails() {
 }
 
 
-// --- DELETED OLD VANILLA JS event listener ---
-// document.getElementById("voiceSelect").addEventListener("change", (e) => { ... });
-
-
-// --- ADDED jQuery/Select2 event listener ---
-// Ensure this runs after the DOM is ready and Select2 might be initialized
 $(document).ready(function() {
-    // Use jQuery to select the element and attach the 'change' event listener
-    // This works correctly with Select2
-    $('#voiceSelect').on('change', function(e) {
-        console.log("Popup: Voice select change event detected (via jQuery)."); // New log
-        const rate = parseFloat(document.getElementById("speedRange").value);
-        const voiceDetails = getSelectedVoiceDetails();
+    $('#voiceSelect, #pdf-voiceSelect').on('change', function(e) {
+        const isPdf = this.id === 'pdf-voiceSelect';
+        const rate = parseFloat(document.getElementById(isPdf ? "pdf-speedRange" : "speedRange").value);
+        const voiceDetails = getSelectedVoiceDetails(isPdf);
 
         if (voiceDetails) {
             chrome.runtime.sendMessage({
                 action: "updateSpeechSettings",
                 rate: rate,
-                voice: voiceDetails
-            }, response => { // Optional: Check response/lastError from background
-                if (chrome.runtime.lastError) {
-                     console.error("Popup: Error sending updateSpeechSettings (voice):", chrome.runtime.lastError.message);
-                } else {
-                     // This log should now appear
-                     console.log("Popup: Sent update settings (voice change) to background.");
-                }
+                voice: voiceDetails,
+                isPdf: isPdf
             });
-        } else {
-            // Added logging if voiceDetails fails
-            console.error("Popup: Could not get voice details on change event. Message not sent.");
         }
     });
 });
 
 
 // Handle speed change
-function handleSpeedChange(newValue) {
+function handleSpeedChange(newValue, isPdf = false) {
     const rate = parseFloat(newValue);
     if (isNaN(rate)) return;
     const clampedRate = Math.min(Math.max(rate, 0.5), 2);
     const formattedRate = clampedRate.toFixed(1);
-    speedRange.value = formattedRate;
-    speedValue.textContent = `${formattedRate}x`;
-    const voiceDetails = getSelectedVoiceDetails(); // Get current voice for context
+    const speedRangeEl = document.getElementById(isPdf ? "pdf-speedRange" : "speedRange");
+    const speedValueEl = document.getElementById(isPdf ? "pdf-speedValue" : "speedValue");
+    speedRangeEl.value = formattedRate;
+    speedValueEl.textContent = `${formattedRate}x`;
+    const voiceDetails = getSelectedVoiceDetails(isPdf);
     if (voiceDetails) {
         chrome.runtime.sendMessage({
             action: "updateSpeechSettings",
-            rate: clampedRate, // Send the new rate
-            voice: voiceDetails // Send the *current* voice
-        }, response => {
-             if (chrome.runtime.lastError) {
-                 console.error("Popup: Error sending updateSpeechSettings (speed):", chrome.runtime.lastError.message);
-             } else {
-                 console.log("Popup: Sent update settings (speed change) to background.");
-             }
+            rate: clampedRate,
+            voice: voiceDetails,
+            isPdf: isPdf
         });
-    } else {
-         console.error("Popup: Cannot send speed update, failed to get current voice details.");
     }
 }
 
 speedRange.addEventListener("input", (e) => handleSpeedChange(e.target.value));
+pdfSpeedRange.addEventListener("input", (e) => handleSpeedChange(e.target.value, true));
 
 
 // Helper function to attempt sending a message, with injection fallback for content.js
 function sendMessageToContentScript(tabId, message, callback) {
-    // ... (keep existing helper function logic) ...
-     console.log(`Popup: Attempting to send message (action: ${message.action}) to tab ${tabId}`);
     chrome.tabs.sendMessage(tabId, message, (response) => {
         if (chrome.runtime.lastError &&
             chrome.runtime.lastError.message.includes("Receiving end does not exist"))
         {
-            console.warn(`Popup: Initial sendMessage failed ('Receiving end does not exist'). Attempting to inject content script for tab ${tabId}.`);
             chrome.scripting.executeScript({
                 target: { tabId: tabId },
                 files: ["content.js"]
             }).then(() => {
-                console.log(`Popup: Content script potentially injected for tab ${tabId}. Retrying sendMessage.`);
                 chrome.tabs.sendMessage(tabId, message, callback);
             }).catch(injectionError => {
-                console.error(`Popup: Failed to inject content script for tab ${tabId}:`, injectionError);
-                const lastError = chrome.runtime.lastError;
                 callback({ error: `Failed to inject content script: ${injectionError.message}` });
             });
         } else {
-             // console.log(`Popup: Initial sendMessage to tab ${tabId} completed.`); // Less verbose
             callback(response);
         }
     });
 }
 
-// Read selected text Button (Keep existing logic using the helper)
 document.addEventListener("DOMContentLoaded", () => {
-    const instructionsHeader = document.querySelector(".instructions-header");
-    const instructionsList = document.querySelector(".instructions-list");
-
-    instructionsHeader.addEventListener("click", () => {
-        instructionsList.classList.toggle("hidden");
+    const instructionsHeaders = document.querySelectorAll(".instructions-header");
+    instructionsHeaders.forEach(header => {
+        header.addEventListener("click", () => {
+            const list = header.nextElementSibling;
+            list.classList.toggle("hidden");
+        });
     });
 
-    // Check if the current tab is a PDF
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const tab = tabs[0];
         if (tab && tab.url && tab.url.toLowerCase().endsWith('.pdf')) {
-            // Show PDF UI
-            webReaderContainer.classList.add('hidden');
-            pdfReaderContainer.classList.remove('hidden');
+            webReaderContainer.style.display = 'none';
+            pdfReaderContainer.style.display = 'flex';
+            chrome.runtime.sendMessage({ action: "readPdf", url: tab.url });
         } else {
-            // Show Web Reader UI
-            webReaderContainer.classList.remove('hidden');
-            pdfReaderContainer.classList.add('hidden');
+            webReaderContainer.style.display = 'flex';
+            pdfReaderContainer.style.display = 'none';
+            chrome.runtime.sendMessage({ action: "getUiState" }, handleUiStateResponse);
         }
     });
+});
 
-
-    // Request the full UI state from the background script
-    chrome.runtime.sendMessage({ action: "getUiState" }, (response) => {
-        if (response) {
-            // Set play/pause button state
-            setButtonState(response.isPlaying);
-
-            // Set speed slider
+function handleUiStateResponse(response) {
+    if (response) {
+        if (response.isPdf) {
+            setPdfButtonState(response.isPlaying);
             if (response.rate) {
-                const speedRange = document.getElementById("speedRange");
-                const speedValue = document.getElementById("speedValue");
+                pdfSpeedRange.value = response.rate;
+                pdfSpeedValue.textContent = `${response.rate.toFixed(1)}x`;
+            }
+            if (response.voice) {
+                const checkVoicesLoadedInterval = setInterval(() => {
+                    if (voicesLoaded && $(pdfVoiceSelect).data('select2')) {
+                        clearInterval(checkVoicesLoadedInterval);
+                        const voiceValue = JSON.stringify({ name: response.voice.name, lang: response.voice.lang });
+                        if ($(pdfVoiceSelect).find(`option[value='${voiceValue}']`).length) {
+                            $(pdfVoiceSelect).val(voiceValue).trigger('change.select2');
+                        }
+                    }
+                }, 50);
+            }
+            if(response.totalPages) {
+                updatePdfInfo(response.currentPage, response.totalPages, response.bookmarks);
+            }
+            if (response.readingMode === 'continuous') {
+                continuousBtn.style.backgroundColor = 'rgba(192, 132, 255, 0.3)';
+                continuousBtn.style.color = '#c084ff';
+                continuousBtn.style.borderColor = 'rgba(192, 132, 255, 0.5)';
+                pageByPageBtn.style.backgroundColor = 'rgba(71, 85, 105, 0.5)';
+                pageByPageBtn.style.color = '#94a3b8';
+                pageByPageBtn.style.borderColor = 'transparent';
+            } else {
+                pageByPageBtn.style.backgroundColor = 'rgba(192, 132, 255, 0.3)';
+                pageByPageBtn.style.color = '#c084ff';
+                pageByPageBtn.style.borderColor = 'rgba(192, 132, 255, 0.5)';
+                continuousBtn.style.backgroundColor = 'rgba(71, 85, 105, 0.5)';
+                continuousBtn.style.color = '#94a3b8';
+                continuousBtn.style.borderColor = 'transparent';
+            }
+        } else {
+            setButtonState(response.isPlaying);
+            if (response.rate) {
                 speedRange.value = response.rate;
                 speedValue.textContent = `${response.rate.toFixed(1)}x`;
             }
-
-            // Set voice dropdown, but only after voices are loaded
             if (response.voice) {
-                const voiceSelect = document.getElementById("voiceSelect");
                 const checkVoicesLoadedInterval = setInterval(() => {
                     if (voicesLoaded && $(voiceSelect).data('select2')) {
                         clearInterval(checkVoicesLoadedInterval);
                         const voiceValue = JSON.stringify({ name: response.voice.name, lang: response.voice.lang });
-                        // Check if the option exists before trying to select it
                         if ($(voiceSelect).find(`option[value='${voiceValue}']`).length) {
                             $(voiceSelect).val(voiceValue).trigger('change.select2');
-                        } else {
-                            console.warn("Popup: Stored voice not found in current voice list.", response.voice);
                         }
                     }
-                }, 50); // Check every 50ms
+                }, 50);
             }
         }
-    });
-});
+    }
+}
 
 let isPlaying = false;
 
@@ -284,37 +269,41 @@ function setButtonState(playing) {
     }
 }
 
+function setPdfButtonState(playing) {
+    if (playing) {
+        pdfPlayIcon.classList.add("hidden");
+        pdfPauseIcon.classList.remove("hidden");
+    } else {
+        pdfPlayIcon.classList.remove("hidden");
+        pdfPauseIcon.classList.add("hidden");
+    }
+}
+
 playPauseBtn.addEventListener("click", () => {
     if (isPlaying) {
         chrome.runtime.sendMessage({ action: "stopReading" });
         setButtonState(false);
     } else {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (!tabs || tabs.length === 0 || !tabs[0]) { console.error("Popup: No active tab found."); alert("No active tab found."); return; }
             const tab = tabs[0];
-            if (tab.url && (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://"))) { alert("This extension cannot work on browser internal pages."); return; }
-            if (!tab.id) { console.error("Popup: Active tab has no ID."); alert("Cannot access this tab."); return; }
-            const tabId = tab.id;
-
-            sendMessageToContentScript(tabId, { action: "getText" }, (response) => {
-                if (chrome.runtime.lastError) { /* ... error handling ... */ return; }
-
-                if (response && typeof response.text === 'string') {
-                    if (response.text.length > 0) {
-                        const rate = parseFloat(document.getElementById("speedRange").value);
-                        const voiceDetails = getSelectedVoiceDetails();
-                        if (voiceDetails) {
-                            chrome.runtime.sendMessage({
-                                action: "startReading",
-                                text: response.text,
-                                rate: rate,
-                                voice: voiceDetails
-                            });
-                            setButtonState(true);
-                        } else { /* ... error handling ... */ }
-                    } else { /* ... handle empty text ... */ }
-                } else if (response && response.error) { /* ... error handling ... */ }
-                else { /* ... error handling ... */ }
+            if (tab.url && (tab.url.startsWith("chrome://") || tab.url.startsWith("edge://"))) {
+                alert("This extension cannot work on browser internal pages.");
+                return;
+            }
+            sendMessageToContentScript(tab.id, { action: "getText" }, (response) => {
+                if (response && typeof response.text === 'string' && response.text.length > 0) {
+                    const rate = parseFloat(speedRange.value);
+                    const voiceDetails = getSelectedVoiceDetails();
+                    if (voiceDetails) {
+                        chrome.runtime.sendMessage({
+                            action: "startReading",
+                            text: response.text,
+                            rate: rate,
+                            voice: voiceDetails
+                        });
+                        setButtonState(true);
+                    }
+                }
             });
         });
     }
@@ -325,60 +314,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.action === "speechStopped") {
         setButtonState(false);
-        // Also update PDF play button if it's visible
-        pdfPlayIcon.classList.remove("hidden");
-        pdfPauseIcon.classList.add("hidden");
-
+        setPdfButtonState(false);
     } else if (message.action === 'pdfProcessingStarted') {
-        pdfInitialView.classList.add('hidden');
+        pdfReaderView.classList.add('hidden');
         pdfLoadingView.classList.remove('hidden');
         loadingText.textContent = 'Processing PDF...';
-
     } else if (message.action === 'pdfProcessingProgress') {
         loadingText.textContent = `Processing page ${message.currentPage} of ${message.totalPages}...`;
-
     } else if (message.action === 'pdfProcessingComplete') {
         pdfLoadingView.classList.add('hidden');
         pdfReaderView.classList.remove('hidden');
-        pdfTotalPages.textContent = message.totalPages;
-        pdfCurrentPage.textContent = 1; // Start at page 1
-
+        updatePdfInfo(1, message.totalPages, []);
     } else if (message.action === 'pdfProcessingFailed') {
         pdfLoadingView.classList.add('hidden');
-        pdfInitialView.classList.remove('hidden');
-        alert(`Failed to process PDF: ${message.error}`); // Show error to user
-
+        webReaderContainer.style.display = 'flex';
+        pdfReaderContainer.style.display = 'none';
+        alert(`Failed to process PDF: ${message.error}`);
     } else if (message.action === 'pdfPageUpdate') {
-        pdfCurrentPage.textContent = message.currentPage;
-        // Update play/pause button state if needed
+        updatePdfInfo(message.currentPage, message.totalPages, message.bookmarks);
+    } else if (message.action === "updatePdfUiState") {
+        pdfLoadingView.classList.add('hidden');
+        pdfReaderView.classList.remove('hidden');
+        handleUiStateResponse({ ...message.state, isPdf: true });
     }
 });
 
+function updatePdfInfo(currentPage, totalPages, bookmarks) {
+    const pdfTotalPagesSpan = document.getElementById('pdf-total-pages');
+    if (pdfTotalPagesSpan) pdfTotalPagesSpan.textContent = totalPages;
+    if (pdfCurrentPageInput) {
+        pdfCurrentPageInput.value = currentPage;
+        pdfCurrentPageInput.max = totalPages;
+    }
+    if (pdfTotalPagesInfo) pdfTotalPagesInfo.textContent = totalPages;
+    if (pdfCurrentPageInfo) pdfCurrentPageInfo.textContent = currentPage;
+    if (pdfReadTime) pdfReadTime.textContent = Math.round(totalPages * 0.8); 
+
+    const progress = totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
+    if (readingProgressBar) readingProgressBar.style.width = `${progress}%`;
+    if (readingProgressPercent) readingProgressPercent.textContent = `${Math.round(progress)}%`;
+
+    if (bookmarkedPagesList) {
+        bookmarkedPagesList.innerHTML = ''; // Clear existing bookmarks
+        bookmarks.forEach(page => {
+            const bookmarkButton = document.createElement('button');
+            bookmarkButton.textContent = page;
+            bookmarkButton.className = 'bookmark-page-btn';
+            bookmarkButton.style.cssText = 'padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; background-color: rgba(71, 85, 105, 0.5); color: #cbd5e1; transition: all 0.2s; white-space: nowrap; border: none;';
+            bookmarkButton.addEventListener('click', () => {
+                chrome.runtime.sendMessage({ action: 'jumpToPage', page: page });
+            });
+            bookmarkedPagesList.appendChild(bookmarkButton);
+        });
+    }
+}
+
 refreshBtn.addEventListener("click", () => {
-    chrome.runtime.sendMessage({ action: "refreshState" }, () => {
-        // Reset UI elements to their default state
-        setButtonState(false);
-        const speedRange = document.getElementById("speedRange");
-        const speedValue = document.getElementById("speedValue");
-        speedRange.value = 1;
-        speedValue.textContent = "1.0x";
-        // You might need to reload voices or reset the voice selector
-        // depending on the desired refresh behavior.
-        // For a simple reset, we just update the UI.
-        console.log("Popup: Refresh button clicked, state reset.");
-    });
+    chrome.runtime.sendMessage({ action: "refreshState" });
+});
+
+pdfRefreshBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "refreshState", isPdf: true });
 });
 
 // --- PDF Reader Event Listeners ---
-readPdfBtn.addEventListener('click', () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tab = tabs[0];
-        if (tab && tab.url) {
-            chrome.runtime.sendMessage({ action: 'readPdf', url: tab.url });
-        }
-    });
-});
-
 pdfPlayPauseBtn.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'togglePdfPlayPause' });
 });
@@ -391,11 +390,38 @@ pdfNextBtn.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'pdfNextPage' });
 });
 
-pdfStopBtn.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ action: 'stopPdfReading' });
-    // Switch back to initial view
-    pdfReaderView.classList.add('hidden');
-    pdfLoadingView.classList.add('hidden');
-    pdfInitialView.classList.remove('hidden');
+
+pdfCurrentPageInput.addEventListener('change', (e) => {
+    const page = parseInt(e.target.value, 10);
+    const totalPages = parseInt(document.getElementById('pdf-total-pages').textContent, 10);
+    if (!isNaN(page) && page >= 1 && page <= totalPages) {
+        chrome.runtime.sendMessage({ action: 'jumpToPage', page: page });
+    }
 });
+
+pageByPageBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'setPdfReadingMode', mode: 'page-by-page' });
+    pageByPageBtn.style.backgroundColor = 'rgba(192, 132, 255, 0.3)';
+    pageByPageBtn.style.color = '#c084ff';
+    pageByPageBtn.style.borderColor = 'rgba(192, 132, 255, 0.5)';
+    continuousBtn.style.backgroundColor = 'rgba(71, 85, 105, 0.5)';
+    continuousBtn.style.color = '#94a3b8';
+    continuousBtn.style.borderColor = 'transparent';
+});
+
+continuousBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'setPdfReadingMode', mode: 'continuous' });
+    continuousBtn.style.backgroundColor = 'rgba(192, 132, 255, 0.3)';
+    continuousBtn.style.color = '#c084ff';
+    continuousBtn.style.borderColor = 'rgba(192, 132, 255, 0.5)';
+    pageByPageBtn.style.backgroundColor = 'rgba(71, 85, 105, 0.5)';
+    pageByPageBtn.style.color = '#94a3b8';
+    pageByPageBtn.style.borderColor = 'transparent';
+});
+
+bookmarkBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'toggleBookmark' });
+});
+
+
 

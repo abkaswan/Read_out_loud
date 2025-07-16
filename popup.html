@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="libs/select2.min.css">
 </head>
+<body>
     <div class="container">
         <!-- Regular Web Page UI -->
         <div id="web-reader-container">
@@ -68,14 +69,7 @@
         <!-- PDF Reader UI (hidden by default) -->
         <div id="pdf-reader-container" class="hidden">
             <div class="header">
-                <h1>PDF Reader</h1>
-            </div>
-
-            <div id="pdf-initial-view">
-                <div class="card">
-                    <p>This appears to be a PDF file.</p>
-                    <button id="readPdfBtn" class="download-btn">Read this PDF</button>
-                </div>
+                <h1>Read Aloud</h1>
             </div>
 
             <div id="pdf-loading-view" class="hidden">
@@ -86,28 +80,122 @@
             </div>
 
             <div id="pdf-reader-view" class="hidden">
+                <div class="card pdf-detected-card">
+                    <div class="pdf-detected-header">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="16" viewBox="0 96 960 960" width="16"
+                            fill="currentColor"><path d="M240 896q-33 0-56.5-23.5T160 816V256q0-33 23.5-56.5T240 176h360l240 240v400q0
+                            33-23.5 56.5T760 896H240Zm320-480v-200H240v560h520V416H560Z"/></svg>
+                        <span>PDF Document Detected</span>
+                    </div>
+                    <div class="pdf-detected-details">
+                        <span id="pdf-total-pages-info">...</span> pages • ⏱️ ~<span id="pdf-read-time">...</span> min
+                        read • Page <span id="pdf-current-page-info">1</span>
+                    </div>
+                </div>
+
+                <div class="card info-card">
+                    <div class="instructions">
+                        <div class="instructions-header">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg>
+                            <h3>How to use</h3>
+                        </div>
+                        <ul class="instructions-list hidden">
+                            <li>Choose page-by-page or continuous reading</li>
+                            <li>Use bookmarks to save your progress</li>
+                            <li>Navigate with page controls or jump to specific pages</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card" style="background-color: var(--container-color); border-radius: 1rem; padding: 1rem; gap: 0;;">
+                    <!-- Reading Mode Toggle -->
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                        <button id="page-by-page-btn" class="mode-btn active" style="flex: 1; padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 500; transition: all 0.2s; background-color: rgba(192, 132, 255, 0.3); color: #c084ff; border: 1px solid rgba(192, 132, 255, 0.5);">
+                            Page by Page
+                        </button>
+                        <button id="continuous-btn" class="mode-btn" style="flex: 1; padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 500; transition: all 0.2s; background-color: rgba(71, 85, 105, 0.5); color: #94a3b8;">
+                            Continuous
+                        </button>
+                    </div>
+
+                    <!-- Page Navigation -->
+                    <div style="display: flex; align-items: center; margin-bottom: 0.75rem;">
+                        <button id="pdf-prevBtn" class="control-btn" style="height: auto; width: auto; padding: 0.5rem; border-radius: 0.5rem; background-color: rgba(71, 85, 105, 0.5); transition: all 0.2s;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                        </button>
+
+                        <div style="flex: 1; text-align: center;">
+                            <div style="font-size: 0.75rem; color: #94a3b8;">Page</div>
+                            <div style="font-size: 0.875rem; font-family: monospace;">
+                                <input type="number" id="pdf-current-page-input" value="1" style="width: 3rem; background: transparent; text-align: center; border: none; border-bottom: 1px solid #64748b; color: #cdd6f4; -moz-appearance: textfield;" min="1">
+                                <span style="color: #64748b;"> / <span id="pdf-total-pages">...</span></span>
+                            </div>
+                        </div>
+
+                        <button id="pdf-nextBtn" class="control-btn" style="height: auto; width: auto; padding: 0.5rem; border-radius: 0.5rem; background-color: rgba(71, 85, 105, 0.5); transition: all 0.2s;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Reading Progress Bar -->
+                    <div style="margin-bottom: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.25rem;">
+                            <span>Document Progress</span>
+                            <span id="reading-progress-percent">0%</span>
+                        </div>
+                        <div style="width: 100%; background-color: #334155; border-radius: 9999px; height: 0.5rem; overflow: hidden;">
+                            <div id="reading-progress-bar" style="height: 100%; background-image: linear-gradient(to right, #a855f7, #ec4899); transition: all 0.3s; width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Bookmarks -->
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <button id="bookmark-btn" style="display: flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; background-color: rgba(59, 130, 246, 0.2); color: #93c5fd; transition: all 0.2s;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+                            Bookmark
+                        </button>
+                        <div id="bookmarked-pages-list" style="display: flex; gap: 0.25rem; flex: 1; overflow-x: auto;">
+                            <!-- Bookmarked pages will be added here -->
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card">
-                    <div class="pdf-progress">
-                        <span id="pdf-current-page">1</span> / <span id="pdf-total-pages">...</span>
+                    <div class="form-group">
+                        <label for="pdf-voiceSelect">Voice</label>
+                        <select id="pdf-voiceSelect" style="width: 100%;"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="pdf-speedRange">Speed</label>
+                        <div class="speed-control">
+                            <input type="range" id="pdf-speedRange" min="0.5" max="2" value="1" step="0.1">
+                            <span id="pdf-speedValue">1.0x</span>
+                        </div>
+                    </div>
+                </div>
+
+                
+
+                <div class="card">
+                    <div class="shortcuts">
+                        <h3>Keyboard Shortcuts:</h3>
+                        <p><b>Play/Pause:</b> Ctrl + Shift + P</p>
+                        <p><b>Refresh:</b> Ctrl + Shift + S</p>
                     </div>
                 </div>
 
                 <div class="controls">
-                    <button id="pdf-prevBtn" class="control-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"></path></svg>
-                    </button>
                     <button id="pdf-playPauseBtn" class="control-btn">
                         <svg id="pdf-play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M8 5v14l11-7z"></path></svg>
                         <svg id="pdf-pause-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" class="hidden"><path d="M6 6h4v12H6zm8 0h4v12h-4z"></path></svg>
                     </button>
-                    <button id="pdf-nextBtn" class="control-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"></path></svg>
+                    <button id="pdf-refreshBtn" class="control-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>
                     </button>
                 </div>
-                 <div class="controls">
-                    <button id="pdf-stopBtn" class="control-btn stop-btn">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M6 6h12v12H6z"></path></svg>
-                    </button>
+
+                <div class="download-container">
+                    <button id="pdf-downloadBtn" class="download-btn" disabled>Download MP3</button>
                 </div>
             </div>
         </div>

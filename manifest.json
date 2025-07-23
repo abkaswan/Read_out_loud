@@ -3,7 +3,7 @@
   "name": "Manga reader",
   "version": "1.0",
   "description": "Reads visible text on the screen using the browser's Text-to-Speech.",
-  "permissions": ["activeTab","scripting", "tabs","offscreen"],
+  "permissions": ["activeTab","scripting", "tabs","offscreen", "storage"],
   "background": {
     "service_worker": "background.js"
   },

@@ -34,6 +34,18 @@ const pdfSpeedRange = document.getElementById('pdf-speedRange');
 const pdfSpeedValue = document.getElementById('pdf-speedValue');
 const pdfRefreshBtn = document.getElementById('pdf-refreshBtn');
 
+// Comic Reader UI
+const chapterCounter = document.getElementById('chapter-counter');
+const pageCounter = document.getElementById('page-counter');
+const panelCounter = document.getElementById('panel-counter');
+const overallProgressBar = document.getElementById('overall-progress');
+const panelProgressBar = document.getElementById('panel-progress');
+const comicPanelSelectionPrompt = document.getElementById('comic-panel-selection-prompt');
+const comicProgressCard = document.querySelector('.comic-progress-card');
+const selectPanelBtn = document.getElementById('select-panel-btn');
+const reselectPanelBtn = document.getElementById('reselect-panel-btn');
+const readingProgress = document.getElementById('reading-progress');
+
 
 let voices = [];
 let voicesLoaded = false;
@@ -310,6 +322,11 @@ playPauseBtn.addEventListener("click", () => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'panelSelectionComplete') {
+        setTimeout(updateComicUI, 100);
+        return; // Stop processing here for this message
+    }
+
     const loadingText = pdfLoadingView.querySelector('p');
 
     if (message.action === "speechStopped") {
@@ -336,8 +353,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         pdfLoadingView.classList.add('hidden');
         pdfReaderView.classList.remove('hidden');
         handleUiStateResponse({ ...message.state, isPdf: true });
+    } else if (message.action === 'updateComicProgress') {
+        updateComicProgress(message.progress);
+    } else if (message.action === 'updateDownloadButton') {
+        const btn = message.isPdf ? pdfDownloadBtn : downloadBtn;
+        btn.disabled = !message.enabled;
+        btn.textContent = message.enabled ? 'Download MP3' : 'Cannot Download';
     }
 });
+
+function updateComicProgress(progress) {
+    const format = (num) => (num > 0 ? String(num).padStart(2, '0') : '--');
+
+    if (chapterCounter) chapterCounter.textContent = format(progress.chapter);
+    if (pageCounter) pageCounter.textContent = format(progress.page);
+    if (panelCounter) panelCounter.textContent = format(progress.panel);
+
+    if (overallProgressBar) {
+        const overallPercentage = progress.totalPages > 0 && progress.page > 0 ? ((progress.page / progress.totalPages) * 100) : 0;
+        overallProgressBar.style.width = `${overallPercentage}%`;
+    }
+
+    if (panelProgressBar) {
+        const panelPercentage = progress.totalPanelsInPage > 0 && progress.panel > 0 ? ((progress.panel / progress.totalPanelsInPage) * 100) : 0;
+        panelProgressBar.style.width = `${panelPercentage}%`;
+    }
+}
 
 function updatePdfInfo(currentPage, totalPages, bookmarks) {
     const pdfTotalPagesSpan = document.getElementById('pdf-total-pages');
@@ -422,6 +463,80 @@ continuousBtn.addEventListener('click', () => {
 bookmarkBtn.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'toggleBookmark' });
 });
+
+// --- Mode Switching ---
+const textModeBtn = document.getElementById('text-mode-btn');
+const comicModeBtn = document.getElementById('comic-mode-btn');
+const textReaderContent = document.getElementById('text-reader-content');
+const comicReaderContainer = document.getElementById('comic-reader-container');
+
+textModeBtn.addEventListener('click', () => {
+    textReaderContent.style.display = 'block';
+    comicReaderContainer.style.display = 'none';
+    textModeBtn.classList.add('active');
+    comicModeBtn.classList.remove('active');
+});
+
+comicModeBtn.addEventListener('click', () => {
+    textReaderContent.style.display = 'none';
+    comicReaderContainer.style.display = 'block';
+    textModeBtn.classList.remove('active');
+    comicModeBtn.classList.add('active');
+    updateComicUI();
+});
+
+selectPanelBtn.addEventListener('click', startSelection);
+reselectPanelBtn.addEventListener('click', startSelection);
+
+function startSelection() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        sendMessageToContentScript(tabs[0].id, { action: "startPanelSelection" });
+        window.close(); // Close the popup so the user can see the page
+    });
+}
+
+function updateComicUI() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        sendMessageToContentScript(tabs[0].id, { action: "getComicState" }, (response) => {
+            if (response && response.comicState) {
+                const state = response.comicState;
+                if (state.selectionNeeded) {
+                    comicPanelSelectionPrompt.classList.remove('hidden');
+                    comicProgressCard.classList.add('hidden');
+                    reselectPanelBtn.parentElement.classList.add('hidden'); // Hide reselect card
+                } else {
+                    comicPanelSelectionPrompt.classList.add('hidden');
+                    comicProgressCard.classList.remove('hidden');
+                    reselectPanelBtn.parentElement.classList.remove('hidden'); // Show reselect card
+                    updateComicProgress(state);
+                }
+                const comicPanelsFound = document.getElementById('comic-panels-found');
+                comicPanelsFound.textContent = state.totalPanels;
+            }
+        });
+    });
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'panelSelectionComplete') {
+        setTimeout(updateComicUI, 100);
+        return;
+    }
+// ... (rest of the listener)
+});
+
+function updateComicProgress(progress) {
+    const { chapter, panel, totalPanels } = progress;
+
+    if (chapterCounter) chapterCounter.textContent = `${chapter > 0 ? chapter : '--'}`;
+    if (panelCounter) panelCounter.textContent = `${panel > 0 ? panel : '--'}/${totalPanels > 0 ? totalPanels : '--'}`;
+
+    if (readingProgress) {
+        const percentage = totalPanels > 0 && panel > 0 ? (panel / totalPanels) * 100 : 0;
+        readingProgress.style.width = `${percentage}%`;
+    }
+}
+
 
 
 

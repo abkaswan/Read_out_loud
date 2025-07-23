@@ -390,4 +390,145 @@ input[type="range"]::-moz-range-thumb {
     color: var(--text-secondary-color);
 }
 
+/* Mode Selection */
+.mode-selection {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.mode-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    background-color: var(--container-color);
+    color: var(--text-secondary-color);
+    border: 1px solid var(--border-color);
+}
+
+.mode-btn.active {
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+    border-color: var(--primary-color);
+}
+
+/* Comic Reader Styles */
+.comic-detected-card {
+    gap: 4px;
+}
+
+.comic-detected-header {
+    font-weight: 600;
+    color: var(--green-color);
+}
+
+.comic-detected-details {
+    font-size: 12px;
+    color: var(--text-secondary-color);
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+.comic-progress-card {
+    background-color: #2a2d3a;
+    gap: 12px;
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.progress-status {
+    color: #a6e3a1; /* Default to green */
+}
+
+.progress-info {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    text-align: center;
+}
+
+.progress-label {
+    font-size: 12px;
+    color: var(--text-secondary-color);
+    margin-bottom: 4px;
+}
+
+.progress-counter {
+    font-family: monospace, monospace;
+    font-size: 16px;
+}
+
+#chapter-counter { color: #cba6f7; }
+#page-counter { color: #89b4fa; }
+#panel-counter { color: #a6e3a1; }
+
+.progress-bar-container {
+    width: 100%;
+}
+
+.progress-bar {
+    background-color: #45475a;
+    border-radius: 9999px;
+    height: 8px;
+    overflow: hidden;
+}
+
+.progress {
+    height: 100%;
+    background-image: linear-gradient(to right, #cba6f7, #f5c2e7);
+    transition: width 0.3s ease-out;
+    width: 0%;
+}
+
+.button-secondary {
+    background-color: transparent;
+    color: var(--text-secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    width: 100%;
+    text-align: center;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.button-secondary:hover {
+    background-color: var(--border-color);
+    color: var(--text-color);
+}
+
+
+
+.button-primary {
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    width: 100%;
+    transition: background-color 0.2s ease;
+    margin-top: 8px;
+}
+
+.button-primary:hover {
+    background-color: #b48ead;
+}
+
+
 

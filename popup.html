@@ -15,54 +15,160 @@
                 <h1>Read Aloud</h1>
             </div>
 
-            <div class="card info-card">
-                <div class="instructions">
-                    <div class="instructions-header">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg>
-                        <h3>How to use</h3>
-                    </div>
-                    <ul class="instructions-list hidden">
-                        <li>Select any text on the page</li>
-                        <li>Click Play to read selected text</li>
-                        <li>Or click Play without selection to read entire page</li>
-                    </ul>
-                </div>
+            <div class="mode-selection">
+                <button id="text-mode-btn" class="mode-btn active">Text</button>
+                <button id="comic-mode-btn" class="mode-btn">Comic</button>
             </div>
 
-            <div class="card">
-                <div class="form-group">
-                    <label for="voiceSelect">Voice</label>
-                    <select id="voiceSelect" style="width: 100%;"></select>
-                </div>
-                <div class="form-group">
-                    <label for="speedRange">Speed</label>
-                    <div class="speed-control">
-                        <input type="range" id="speedRange" min="0.5" max="2" value="1" step="0.1">
-                        <span id="speedValue">1.0x</span>
+            <div id="text-reader-content">
+                <div class="card info-card">
+                    <div class="instructions">
+                        <div class="instructions-header">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg>
+                            <h3>How to use</h3>
+                        </div>
+                        <ul class="instructions-list hidden">
+                            <li>Select any text on the page</li>
+                            <li>Click Play to read selected text</li>
+                            <li>Or click Play without selection to read entire page</li>
+                        </ul>
                     </div>
                 </div>
-            </div>
 
-            <div class="controls">
-                <button id="playPauseBtn" class="control-btn">
-                    <svg id="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M8 5v14l11-7z"></path></svg>
-                    <svg id="pause-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" class="hidden"><path d="M6 6h4v12H6zm8 0h4v12h-4z"></path></svg>
-                </button>
-                <button id="refreshBtn" class="control-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>
-                </button>
-            </div>
+                <div class="card">
+                    <div class="form-group">
+                        <label for="voiceSelect">Voice</label>
+                        <select id="voiceSelect" style="width: 100%;"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="speedRange">Speed</label>
+                        <div class="speed-control">
+                            <input type="range" id="speedRange" min="0.5" max="2" value="1" step="0.1">
+                            <span id="speedValue">1.0x</span>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="card">
-                <div class="shortcuts">
-                    <h3>Keyboard Shortcuts:</h3>
-                    <p><b>Play/Pause:</b> Ctrl + Shift + P</p>
-                    <p><b>Refresh:</b> Ctrl + Shift + S</p>
+                <div class="controls">
+                    <button id="playPauseBtn" class="control-btn">
+                        <svg id="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M8 5v14l11-7z"></path></svg>
+                        <svg id="pause-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" class="hidden"><path d="M6 6h4v12H6zm8 0h4v12h-4z"></path></svg>
+                    </button>
+                    <button id="refreshBtn" class="control-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>
+                    </button>
+                </div>
+
+                <div class="card">
+                    <div class="shortcuts">
+                        <h3>Keyboard Shortcuts:</h3>
+                        <p><b>Play/Pause:</b> Ctrl + Shift + P</p>
+                        <p><b>Refresh:</b> Ctrl + Shift + S</p>
+                    </div>
+                </div>
+
+                <div class="download-container">
+                    <button id="downloadBtn" class="download-btn" disabled>Download MP3</button>
                 </div>
             </div>
+            <div id="comic-reader-container" class="hidden">
+                <!-- New Reading Settings Card -->
+                <div class="card">
+                    <div class="settings-header">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                            <path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"></path>
+                        </svg>
+                        <h3>Reading Settings</h3>
+                    </div>
+                    <div class="form-group">
+                        <label>Reading Direction</label>
+                        <div class="button-group">
+                            <button id="direction-lr" class="button-group-item active">Left to Right</button>
+                            <button id="direction-rl" class="button-group-item">Right to Left</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Auto Advance</label>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="auto-advance-toggle" class="toggle-input">
+                            <label for="auto-advance-toggle" class="toggle-label"></label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="panel-delay-slider">Panel Delay: <span id="panel-delay-value">3s</span></label>
+                        <input type="range" id="panel-delay-slider" min="1" max="10" value="3" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Continuous Chapter</label>
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="continuous-chapter-toggle" class="toggle-input">
+                            <label for="continuous-chapter-toggle" class="toggle-label"></label>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="download-container">
-                <button id="downloadBtn" class="download-btn" disabled>Download MP3</button>
+                <!-- Playback Controls -->
+                <div class="controls">
+                    <button id="comic-playPauseBtn" class="control-btn">
+                        <svg id="comic-play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M8 5v14l11-7z"></path></svg>
+                        <svg id="comic-pause-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" class="hidden"><path d="M6 6h4v12H6zm8 0h4v12h-4z"></path></svg>
+                    </button>
+                    <button id="comic-refreshBtn" class="control-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>
+                    </button>
+                </div>
+
+                <div class="download-container">
+                    <button id="comic-downloadBtn" class="download-btn" disabled>Download MP3</button>
+                </div>
+
+                <div class="card">
+                    <div class="shortcuts">
+                        <h3>Keyboard Shortcuts:</h3>
+                        <p><b>Play/Pause:</b> Ctrl + Shift + P</p>
+                        <p><b>Refresh:</b> Ctrl + Shift + S</p>
+                    </div>
+                </div>
+
+                 <div id="comic-panel-selection-prompt" class="hidden">
+                    <div class="card info-card">
+                        <div class="instructions">
+                            <div class="instructions-header">
+                                <h3>Setup Required</h3>
+                            </div>
+                            <div class="instructions-list">
+                                <p>To track progress, please show me where the comic panels are.</p>
+                                <button id="select-panel-btn" class="button-primary">Select a Panel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card comic-progress-card hidden">
+                    <div class="progress-header">
+                        <span class="progress-title">Reading Progress</span>
+                        <span class="progress-status" id="progress-status-text">In Progress</span>
+                    </div>
+                    <div class="progress-info">
+                        <div class="progress-item">
+                            <span class="progress-label">Chapter</span>
+                            <span class="progress-counter" id="chapter-counter">--</span>
+                        </div>
+                        <div class="progress-item">
+                            <span class="progress-label">Panel</span>
+                            <span class="progress-counter" id="panel-counter">--/--</span>
+                        </div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar">
+                            <div class="progress" id="reading-progress"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                     <button id="reselect-panel-btn" class="button-secondary">Reselect Panel</button>
+                </div>
             </div>
         </div>
 

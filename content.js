@@ -168,26 +168,230 @@ function highlightWordAtCharIndex(charIndex) {
 
 // --- Message Handling ---
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    try {
-        if (request.action === 'getText') {
-            const text = getTextToSend(); // This now potentially builds textNodeMap
-            sendResponse({ text: text });
-        } else if (request.action === 'highlightCharacterIndex') {
-            highlightWordAtCharIndex(request.charIndex);
-            // No response needed for highlight commands
-        } else if (request.action === 'clearHighlight') {
-            clearHighlight();
-            // No response needed
+    // Use an async IIFE to handle async logic in the listener
+    (async () => {
+        try {
+            if (request.action === 'getText') {
+                const text = getTextToSend();
+                sendResponse({ text: text });
+            } else if (request.action === 'highlightCharacterIndex') {
+                highlightWordAtCharIndex(request.charIndex);
+            } else if (request.action === 'clearHighlight') {
+                clearHighlight();
+            } else if (request.action === 'getImages') {
+                const images = Array.from(document.getElementsByTagName('img'));
+                const imageUrls = images.map(img => img.src);
+                sendResponse({ imageUrls: imageUrls });
+            } else if (request.action === 'getComicState') {
+                const comicState = await getComicState();
+                sendResponse({ comicState: comicState });
+            } else if (request.action === 'startPanelSelection') {
+                startPanelSelection();
+            }
+        } catch (error) {
+            console.error("Content Script Error:", error);
+            // Handle potential errors in async operations
+            sendResponse({ error: error.message });
         }
-        else {
-        }
-    } catch (error) {
-        console.error("Content Script: Error processing message:", request.action, error);
-        // Don't send response for highlight/clear errors, just log
-        if (request.action === 'getText') {
-             sendResponse({ error: error.message });
+    })();
+
+    // Return true to indicate that the response will be sent asynchronously.
+    return true;
+});
+
+// --- Comic Mode Logic ---
+
+const getSelectorForHost = async (hostname) => {
+    const key = `selector_${hostname}`;
+    const data = await chrome.storage.local.get(key);
+    return data[key];
+};
+
+const saveSelectorForHost = async (hostname, selector) => {
+    const key = `selector_${hostname}`;
+    await chrome.storage.local.set({ [key]: selector });
+};
+
+async function getComicState() {
+    const hostname = window.location.hostname;
+    const selector = await getSelectorForHost(hostname);
+
+    if (!selector) {
+        currentComicState = { selectionNeeded: true, totalPanels: 0 };
+        return currentComicState;
+    }
+
+    const panelElements = document.querySelectorAll(selector);
+    const totalPanels = panelElements.length;
+
+    const chapter = findChapterNumber(window.location.href);
+
+    const page = totalPanels > 0 ? 1 : 0;
+    const panel = totalPanels > 0 ? 1 : 0;
+
+    currentComicState = {
+        selectionNeeded: false,
+        selector: selector,
+        chapter: chapter,
+        panel: panel,
+        totalPanelsInPage: totalPanels,
+        totalPanels: totalPanels,
+    };
+
+    // Perform an initial scroll check to set the correct panel number on load
+    handleScroll();
+
+    return currentComicState;
+}
+
+function findChapterNumber(url) {
+    // Tries a series of robust regex patterns to find the chapter number.
+    const patterns = [
+        /(?:chapter|ch)[\/-](\d+(?:\.\d+)?)/i, // Matches chapter-123, ch/123, etc.
+        /\/(\d+(?:\.\d+)?)(?:[^\d]|$)/,       // Matches /123/ or /123 followed by non-digit or end
+        /(\d+(?:\.\d+)?)/                     // Last resort: matches any number
+    ];
+
+    for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) {
+            return parseFloat(match[1]);
         }
     }
-    // Return true only for async potential (getText might be considered async if extraction is slow)
-    return request.action === 'getText';
-});
+
+    return 0; // Return 0 if no chapter number is found
+}
+
+// --- Panel Selection Mode ---
+
+let isSelectionModeActive = false;
+let highlightOverlay = null;
+
+function createOverlay() {
+    const overlay = document.createElement('div');
+    overlay.style.position = 'absolute';
+    overlay.style.backgroundColor = 'rgba(137, 247, 254, 0.4)';
+    overlay.style.border = '2px solid #89f7fe';
+    overlay.style.pointerEvents = 'none';
+    overlay.style.zIndex = '999999';
+    overlay.style.transition = 'all 0.1s ease';
+    document.body.appendChild(overlay);
+    return overlay;
+}
+
+function updateOverlay(element) {
+    if (!highlightOverlay) highlightOverlay = createOverlay();
+    const rect = element.getBoundingClientRect();
+    highlightOverlay.style.left = `${rect.left + window.scrollX}px`;
+    highlightOverlay.style.top = `${rect.top + window.scrollY}px`;
+    highlightOverlay.style.width = `${rect.width}px`;
+    highlightOverlay.style.height = `${rect.height}px`;
+}
+
+function handleMouseOver(e) {
+    updateOverlay(e.target);
+}
+
+function handleClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const element = e.target;
+    const selector = generateSelector(element);
+    if (selector) {
+        saveSelectorForHost(window.location.hostname, selector);
+        // Inform popup that selection is done
+        chrome.runtime.sendMessage({ action: 'panelSelectionComplete' });
+    }
+    stopPanelSelection();
+}
+
+function generateSelector(el) {
+    if (!el) return null;
+    // Simple strategy: use the class list. Can be improved.
+    if (el.className) {
+        const classSelector = el.className.trim().split(/\s+/).map(c => `.${c}`).join('');
+        // Check if this selector is reasonably specific
+        const matches = document.querySelectorAll(classSelector);
+        if (matches.length > 0 && matches.length < 200) { // Avoid overly generic selectors
+            return `${el.tagName.toLowerCase()}${classSelector}`;
+        }
+    }
+    // Fallback to just tag name if no good class found
+    return el.tagName.toLowerCase();
+}
+
+function startPanelSelection() {
+    if (isSelectionModeActive) return;
+    isSelectionModeActive = true;
+    document.addEventListener('mouseover', handleMouseOver);
+    document.addEventListener('click', handleClick, true); // Use capture to prevent page navigation
+}
+
+function stopPanelSelection() {
+    if (!isSelectionModeActive) return;
+    isSelectionModeActive = false;
+    document.removeEventListener('mouseover', handleMouseOver);
+    document.removeEventListener('click', handleClick, true);
+    if (highlightOverlay) {
+        highlightOverlay.remove();
+        highlightOverlay = null;
+    }
+}
+
+// --- Scroll Tracking ---
+
+let lastScrollCheck = 0;
+const SCROLL_THROTTLE_MS = 100;
+let currentComicState = {};
+
+function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
+function handleScroll() {
+    if (!currentComicState.selector || currentComicState.totalPanels === 0) {
+        return;
+    }
+
+    const panelElements = document.querySelectorAll(currentComicState.selector);
+    if (panelElements.length === 0) return;
+
+    let currentPanel = 1; // Default to the first panel
+
+    // Find the last panel whose top is above the viewport's vertical center.
+    // This means it's the "current" one we're looking at or have just passed.
+    for (let i = 0; i < panelElements.length; i++) {
+        const panel = panelElements[i];
+        const rect = panel.getBoundingClientRect();
+
+        if (rect.top < (window.innerHeight * 0.5)) {
+            currentPanel = i + 1;
+        } else {
+            // Stop when we find a panel that is entirely below the halfway point
+            break;
+        }
+    }
+
+    if (currentComicState.panel !== currentPanel) {
+        currentComicState.panel = currentPanel;
+        chrome.runtime.sendMessage({
+            action: 'updateComicProgress',
+            progress: currentComicState
+        });
+    }
+}
+
+// Attach the throttled scroll handler
+window.addEventListener('scroll', throttle(handleScroll, SCROLL_THROTTLE_MS));
+
+

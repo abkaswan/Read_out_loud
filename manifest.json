@@ -26,15 +26,24 @@
     {
       "resources": [
         "offscreen.html",
-        "libs/pdfjs/pdf.worker.min.js"
+        "opencv_sandbox.html",
+        "opencv_sandbox.js",
+        "libs/pdfjs/pdf.worker.min.js",
+        "libs/worker.min.js",
+        "libs/tesseract-core.wasm.js",
+        "scripts/bubble-detector.js"
       ],
       "matches": [
         "<all_urls>"
       ]
     }
   ],
+  "sandbox": {
+    "pages": ["opencv_sandbox.html"]
+  },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; worker-src 'self';"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';"
   },
   "commands": {
     "toggle-play-pause": {

@@ -74,12 +74,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     totalPages: message.totalPages
                 });
                 break;
-            case 'pdfProcessingFailed':
-                chrome.runtime.sendMessage({
-                    action: 'pdfProcessingFailed',
-                    error: message.error
-                });
-                handleStopPdfReading();
+            case 'bubbleDetectionResult':
+                console.log('[Background Script] Received bubble detection result.');
+                handleReadBubbleImages(message.imageUrls);
                 break;
         }
     } else {
@@ -167,10 +164,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 handleChangePdfPage(message.page - 1);
                 sendResponse({ success: true });
                 break;
+            case 'readImageText':
+                console.log('[Background Script] Received image URL:', message.imageUrl);
+                // Fetch the image here in the background script to bypass CORS issues in the content script.
+                fetch(message.imageUrl)
+                    .then(response => response.blob())
+                    .then(blob => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const base64data = reader.result;
+                            console.log('[Background Script] Image converted to base64. Forwarding to offscreen.');
+                            setupOffscreenDocument().then(() => {
+                                chrome.runtime.sendMessage({
+                                    target: 'offscreen',
+                                    action: 'readImageText',
+                                    imageUrl: base64data,
+                                    rate: lastRate || 1.0,
+                                    voice: lastVoice || null
+                                });
+                            });
+                        };
+                        reader.readAsDataURL(blob);
+                    })
+                    .catch(error => {
+                        console.error('[Background Script] Error fetching image:', error);
+                    });
+                sendResponse({ success: true }); // Acknowledge the message immediately
+                break;
+            case 'readBubbleImages':
+                console.log('[Background Script] Received bubble images. Starting OCR process.');
+                handleReadBubbleImages(message.imageUrls);
+                sendResponse({ success: true });
+                break;
+            case 'processImageForBubbles':
+                console.log('[Background Script] Received processImageForBubbles request. Forwarding to offscreen.');
+                setupOffscreenDocument().then(() => {
+                    chrome.runtime.sendMessage({
+                        target: 'offscreen',
+                        action: 'findBubblesAndCrop',
+                        imageUrl: message.imageUrl
+                    });
+                });
+                sendResponse({ success: true });
+                break;
         }
     }
     return true;
 });
+
+async function handleReadBubbleImages(imageUrls) {
+    console.log(`[Background Script] Processing ${imageUrls.length} bubble images.`);
+    let combinedText = '';
+    for (const imageUrl of imageUrls) {
+        const text = await new Promise((resolve, reject) => {
+            const messageListener = (message) => {
+                if (message.action === 'ocrResult') {
+                    console.log('[Background Script] Received OCR result for a bubble.');
+                    chrome.runtime.onMessage.removeListener(messageListener);
+                    resolve(message.text);
+                }
+            };
+            chrome.runtime.onMessage.addListener(messageListener);
+            setupOffscreenDocument().then(() => {
+                chrome.runtime.sendMessage({
+                    target: 'offscreen',
+                    action: 'readImageText',
+                    imageUrl: imageUrl,
+                    rate: lastRate || 1.0,
+                    voice: lastVoice || null,
+                    returnOcrResult: true // Special flag for this handler
+                });
+            });
+        });
+        if (text) {
+            combinedText += text + ' ';
+        }
+    }
+    console.log('[Background Script] All bubbles processed. Final text:', combinedText);
+    handleStartReading(combinedText.trim(), lastRate, lastVoice);
+}
 
 
 // --- Action Handlers ---
@@ -325,30 +397,49 @@ chrome.tabs.onRemoved.addListener(tabId => {
 });
 
 // --- Command Listener for Keyboard Shortcuts ---
+function isComicMode(tabId, callback) {
+    sendMessageToContentScript(tabId, { action: "getComicState" }, (response) => {
+        if (response && response.comicState && !response.comicState.selectionNeeded) {
+            callback(true, response.comicState);
+        } else {
+            callback(false, null);
+        }
+    });
+}
+
 chrome.commands.onCommand.addListener((command, tab) => {
     switch (command) {
         case "toggle-play-pause":
-            if (pdfState.url && pdfState.text_pages.length > 0) {
-                handleTogglePdfPlayPause();
-            } else {
-                if (activeSpeechTabId !== null) {
-                    handleStopReading();
+            isComicMode(tab.id, (isComic, comicState) => {
+                if (isComic) {
+                    // Toggle comic reading
+                    const action = comicState.isPlaying ? 'stopComicReading' : 'startComicReading';
+                    sendMessageToContentScript(tab.id, { action: action, settings: comicState });
+                } else if (pdfState.url && pdfState.text_pages.length > 0) {
+                    // Toggle PDF reading
+                    handleTogglePdfPlayPause();
                 } else {
-                    if (tab.id) {
-                        sendMessageToContentScript(tab.id, { action: "getText" }, (response) => {
-                            if (response && response.text && response.text.length > 0) {
-                                activeSpeechTabId = tab.id;
-                                handleStartReading(response.text, lastRate || 1.0, lastVoice || null);
-                                chrome.runtime.sendMessage({ action: 'speechStarted' });
-                            }
-                        });
+                    // Toggle web page reading
+                    if (activeSpeechTabId !== null) {
+                        handleStopReading();
+                    } else {
+                        if (tab.id) {
+                            sendMessageToContentScript(tab.id, { action: "getText" }, (response) => {
+                                if (response && response.text && response.text.length > 0) {
+                                    activeSpeechTabId = tab.id;
+                                    handleStartReading(response.text, lastRate || 1.0, lastVoice || null);
+                                    chrome.runtime.sendMessage({ action: 'speechStarted' });
+                                }
+                            });
+                        }
                     }
                 }
-            }
+            });
             break;
         case "refresh-state":
             handleStopReading();
             handleStopPdfReading();
+            sendMessageToContentScript(tab.id, { action: "stopComicReading" });
             lastVoice = null;
             lastRate = 1.0;
             chrome.runtime.sendMessage({ action: 'speechStopped' });

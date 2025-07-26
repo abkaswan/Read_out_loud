@@ -34,17 +34,186 @@ const pdfSpeedRange = document.getElementById('pdf-speedRange');
 const pdfSpeedValue = document.getElementById('pdf-speedValue');
 const pdfRefreshBtn = document.getElementById('pdf-refreshBtn');
 
-// Comic Reader UI
+// --- Comic Reader UI ---
 const chapterCounter = document.getElementById('chapter-counter');
-const pageCounter = document.getElementById('page-counter');
 const panelCounter = document.getElementById('panel-counter');
-const overallProgressBar = document.getElementById('overall-progress');
-const panelProgressBar = document.getElementById('panel-progress');
+const readingProgress = document.getElementById('reading-progress');
 const comicPanelSelectionPrompt = document.getElementById('comic-panel-selection-prompt');
 const comicProgressCard = document.querySelector('.comic-progress-card');
 const selectPanelBtn = document.getElementById('select-panel-btn');
 const reselectPanelBtn = document.getElementById('reselect-panel-btn');
-const readingProgress = document.getElementById('reading-progress');
+
+// New Comic Settings UI
+const directionLRBtn = document.getElementById('direction-lr');
+const directionRLBtn = document.getElementById('direction-rl');
+const autoAdvanceToggle = document.getElementById('auto-advance-toggle');
+const panelDelaySlider = document.getElementById('panel-delay-slider');
+const panelDelayValue = document.getElementById('panel-delay-value');
+const continuousChapterToggle = document.getElementById('continuous-chapter-toggle');
+const comicPlayPauseBtn = document.getElementById('comic-playPauseBtn');
+const comicPlayIcon = document.getElementById('comic-play-icon');
+const comicPauseIcon = document.getElementById('comic-pause-icon');
+const comicRefreshBtn = document.getElementById('comic-refreshBtn');
+const comicVoiceSelect = document.getElementById('comic-voiceSelect');
+const comicSpeedRange = document.getElementById('comic-speedRange');
+const comicSpeedValue = document.getElementById('comic-speedValue');
+
+let comicSettings = {};
+
+// --- Comic Settings Management ---
+const defaultComicSettings = {
+    readingDirection: 'lr',
+    autoAdvance: false,
+    panelDelay: 3,
+    continuousChapter: false,
+    isPlaying: false,
+    voice: null,
+    rate: 1.0
+};
+
+async function loadComicSettings() {
+    const data = await chrome.storage.local.get('comicSettings');
+    comicSettings = { ...defaultComicSettings, ...data.comicSettings };
+    // If no voice is saved, try to set a default one
+    if (!comicSettings.voice && uniqueVoices.length > 0) {
+        const defaultVoice = uniqueVoices.find(v => v.default) || uniqueVoices[0];
+        comicSettings.voice = { name: defaultVoice.name, lang: defaultVoice.lang };
+    }
+    applyComicSettingsToUI();
+}
+
+function saveComicSettings() {
+    chrome.storage.local.set({ comicSettings });
+}
+
+function applyComicSettingsToUI() {
+    // Reading Direction
+    if (comicSettings.readingDirection === 'lr') {
+        directionLRBtn.classList.add('active');
+        directionRLBtn.classList.remove('active');
+    } else {
+        directionRLBtn.classList.add('active');
+        directionLRBtn.classList.remove('active');
+    }
+    // Auto Advance
+    autoAdvanceToggle.checked = comicSettings.autoAdvance;
+    // Panel Delay
+    panelDelaySlider.value = comicSettings.panelDelay;
+    panelDelayValue.textContent = `${comicSettings.panelDelay}s`;
+    // Continuous Chapter
+    continuousChapterToggle.checked = comicSettings.continuousChapter;
+    // Play/Pause State
+    setComicButtonState(comicSettings.isPlaying);
+
+    // Voice and Speed
+    comicSpeedRange.value = comicSettings.rate;
+    comicSpeedValue.textContent = `${comicSettings.rate.toFixed(1)}x`;
+
+    if (comicSettings.voice) {
+        const checkVoicesLoadedInterval = setInterval(() => {
+            if (voicesLoaded && $(comicVoiceSelect).data('select2')) {
+                clearInterval(checkVoicesLoadedInterval);
+                const voiceValue = JSON.stringify({ name: comicSettings.voice.name, lang: comicSettings.voice.lang });
+                if ($(comicVoiceSelect).find(`option[value='${voiceValue}']`).length) {
+                    $(comicVoiceSelect).val(voiceValue).trigger('change.select2');
+                }
+            }
+        }, 50);
+    }
+}
+
+function setComicButtonState(playing) {
+    comicSettings.isPlaying = playing;
+    if (playing) {
+        comicPlayIcon.classList.add("hidden");
+        comicPauseIcon.classList.remove("hidden");
+    } else {
+        comicPlayIcon.classList.remove("hidden");
+        comicPauseIcon.classList.add("hidden");
+    }
+}
+
+// --- Comic Event Listeners ---
+directionLRBtn.addEventListener('click', () => {
+    comicSettings.readingDirection = 'lr';
+    applyComicSettingsToUI();
+    saveComicSettings();
+});
+
+directionRLBtn.addEventListener('click', () => {
+    comicSettings.readingDirection = 'rl';
+    applyComicSettingsToUI();
+    saveComicSettings();
+});
+
+autoAdvanceToggle.addEventListener('change', () => {
+    comicSettings.autoAdvance = autoAdvanceToggle.checked;
+    saveComicSettings();
+});
+
+panelDelaySlider.addEventListener('input', () => {
+    panelDelayValue.textContent = `${panelDelaySlider.value}s`;
+});
+
+panelDelaySlider.addEventListener('change', () => {
+    comicSettings.panelDelay = parseInt(panelDelaySlider.value, 10);
+    saveComicSettings();
+});
+
+continuousChapterToggle.addEventListener('change', () => {
+    comicSettings.continuousChapter = continuousChapterToggle.checked;
+    saveComicSettings();
+});
+
+comicPlayPauseBtn.addEventListener('click', () => {
+    setComicButtonState(!comicSettings.isPlaying); // Toggle UI immediately
+    saveComicSettings();
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        // Pass the entire settings object to the content script
+        chrome.tabs.sendMessage(tabs[0].id, {
+            action: comicSettings.isPlaying ? 'startComicReading' : 'stopComicReading',
+            settings: comicSettings
+        });
+        // Also update the background script's last known settings
+        if (comicSettings.isPlaying) {
+            chrome.runtime.sendMessage({
+                action: "updateSpeechSettings",
+                rate: comicSettings.rate,
+                voice: comicSettings.voice
+            });
+        }
+    });
+});
+
+comicRefreshBtn.addEventListener('click', () => {
+    comicSettings = { ...defaultComicSettings };
+    applyComicSettingsToUI();
+    saveComicSettings();
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        chrome.tabs.sendMessage(tabs[0].id, {
+            action: 'stopComicReading'
+        });
+    });
+});
+
+comicVoiceSelect.addEventListener('change', () => {
+    try {
+        comicSettings.voice = JSON.parse(comicVoiceSelect.value);
+        saveComicSettings();
+    } catch(e) {
+        console.error("Error parsing comic voice details", e);
+    }
+});
+
+comicSpeedRange.addEventListener('input', () => {
+    const rate = parseFloat(comicSpeedRange.value);
+    comicSpeedValue.textContent = `${rate.toFixed(1)}x`;
+    comicSettings.rate = rate;
+    saveComicSettings();
+});
+
+
+
 
 
 let voices = [];
@@ -61,7 +230,7 @@ function loadVoices() {
     }
 
     voices = speechSynthesis.getVoices();
-    const selects = [document.getElementById("voiceSelect"), document.getElementById("pdf-voiceSelect")];
+    const selects = [voiceSelect, pdfVoiceSelect, comicVoiceSelect];
 
     uniqueVoices = voices.filter((voice, index, self) =>
         index === self.findIndex((v) => v.name === voice.name && v.lang === voice.lang)
@@ -353,32 +522,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         pdfLoadingView.classList.add('hidden');
         pdfReaderView.classList.remove('hidden');
         handleUiStateResponse({ ...message.state, isPdf: true });
-    } else if (message.action === 'updateComicProgress') {
-        updateComicProgress(message.progress);
+    } else if (message.action === 'updateComicState') {
+        if (message.state) {
+            if (message.state.isPlaying !== undefined && comicSettings.isPlaying !== message.state.isPlaying) {
+                setComicButtonState(message.state.isPlaying);
+                saveComicSettings();
+            }
+            updateComicProgressUI(message.state);
+        }
     } else if (message.action === 'updateDownloadButton') {
         const btn = message.isPdf ? pdfDownloadBtn : downloadBtn;
         btn.disabled = !message.enabled;
         btn.textContent = message.enabled ? 'Download MP3' : 'Cannot Download';
     }
 });
-
-function updateComicProgress(progress) {
-    const format = (num) => (num > 0 ? String(num).padStart(2, '0') : '--');
-
-    if (chapterCounter) chapterCounter.textContent = format(progress.chapter);
-    if (pageCounter) pageCounter.textContent = format(progress.page);
-    if (panelCounter) panelCounter.textContent = format(progress.panel);
-
-    if (overallProgressBar) {
-        const overallPercentage = progress.totalPages > 0 && progress.page > 0 ? ((progress.page / progress.totalPages) * 100) : 0;
-        overallProgressBar.style.width = `${overallPercentage}%`;
-    }
-
-    if (panelProgressBar) {
-        const panelPercentage = progress.totalPanelsInPage > 0 && progress.panel > 0 ? ((progress.panel / progress.totalPanelsInPage) * 100) : 0;
-        panelProgressBar.style.width = `${panelPercentage}%`;
-    }
-}
 
 function updatePdfInfo(currentPage, totalPages, bookmarks) {
     const pdfTotalPagesSpan = document.getElementById('pdf-total-pages');
@@ -482,6 +639,7 @@ comicModeBtn.addEventListener('click', () => {
     comicReaderContainer.style.display = 'block';
     textModeBtn.classList.remove('active');
     comicModeBtn.classList.add('active');
+    loadComicSettings(); // Load settings when switching to comic mode
     updateComicUI();
 });
 
@@ -508,10 +666,10 @@ function updateComicUI() {
                     comicPanelSelectionPrompt.classList.add('hidden');
                     comicProgressCard.classList.remove('hidden');
                     reselectPanelBtn.parentElement.classList.remove('hidden'); // Show reselect card
-                    updateComicProgress(state);
+                    updateComicProgressUI(state);
                 }
                 const comicPanelsFound = document.getElementById('comic-panels-found');
-                comicPanelsFound.textContent = state.totalPanels;
+                if(comicPanelsFound) comicPanelsFound.textContent = state.totalPanels;
             }
         });
     });
@@ -525,7 +683,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ... (rest of the listener)
 });
 
-function updateComicProgress(progress) {
+function updateComicProgressUI(progress) {
     const { chapter, panel, totalPanels } = progress;
 
     if (chapterCounter) chapterCounter.textContent = `${chapter > 0 ? chapter : '--'}`;
@@ -536,7 +694,6 @@ function updateComicProgress(progress) {
         readingProgress.style.width = `${percentage}%`;
     }
 }
-
 
 
 

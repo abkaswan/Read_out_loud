@@ -530,5 +530,107 @@ input[type="range"]::-moz-range-thumb {
     background-color: #b48ead;
 }
 
+/* New Comic Reader Settings Styles */
+.settings-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.settings-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.settings-header svg {
+    color: var(--primary-color);
+}
+
+.button-group {
+    display: flex;
+    width: 100%;
+}
+
+.button-group-item {
+    flex: 1;
+    padding: 8px 10px;
+    background-color: var(--bg-color);
+    color: var(--text-secondary-color);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+    font-size: 12px;
+}
+
+.button-group-item:first-child {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+.button-group-item:last-child {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    border-left-width: 0;
+}
+
+.button-group-item.active {
+    background-color: var(--primary-color);
+    color: var(--bg-color);
+    border-color: var(--primary-color);
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+}
+
+.toggle-input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-label {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border-color);
+    border-radius: 22px;
+    transition: .4s;
+}
+
+.toggle-label:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: .4s;
+}
+
+.toggle-input:checked + .toggle-label {
+    background-color: var(--primary-color);
+}
+
+.toggle-input:checked + .toggle-label:before {
+    transform: translateX(18px);
+}
+
+#panel-delay-value {
+    font-weight: bold;
+    color: var(--text-color);
+}
+
 
 

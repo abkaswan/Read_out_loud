@@ -1,6 +1,20 @@
 if (typeof window.contentScriptLoaded === 'undefined') {
     window.contentScriptLoaded = true;
 
+    // Define comic state early to prevent reference errors
+    let comicState = {
+        selectionNeeded: true,
+        selector: null,
+        totalPanels: 0,
+        chapter: 0,
+        panel: 0,
+        isPlaying: false,
+        readingDirection: 'lr',
+        panelDelay: 3,
+        continuousChapter: false,
+    };
+    let autoAdvanceInterval = null;
+
     let textNodeMap = []; // Stores { node: TextNode, text: string, startCharIndex: number }
     let currentHighlightElement = null;
     const highlightClassName = 'tts-highlight';
@@ -223,19 +237,6 @@ if (typeof window.contentScriptLoaded === 'undefined') {
             }, 60000); // 60-second timeout
         });
     }
-
-    let comicState = {
-        selectionNeeded: true,
-        selector: null,
-        totalPanels: 0,
-        chapter: 0,
-        panel: 0,
-        isPlaying: false,
-        readingDirection: 'lr',
-        panelDelay: 3,
-        continuousChapter: false,
-    };
-    let autoAdvanceInterval = null;
 
     const getSelectorForHost = async (hostname) => {
         const key = `selector_${hostname}`;

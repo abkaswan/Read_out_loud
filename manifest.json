@@ -30,8 +30,10 @@
         "opencv_sandbox.js",
         "libs/pdfjs/pdf.worker.min.js",
         "libs/worker.min.js",
+        "libs/tesseract.min.js",
         "libs/tesseract-core.wasm.js",
-        "scripts/bubble-detector.js"
+        "scripts/bubble-detector.js",
+        "scripts/tesseract-bridge.js"
       ],
       "matches": [
         "<all_urls>"

@@ -4,6 +4,9 @@ let activeSpeechTabId = null; // <--- STORE THE TAB ID FOR CURRENT SPEECH
 let lastVoice = null;
 let lastRate = 1.0;
 
+// --- Bubble Reading Session State ---
+let bubbleSession = null; // { tabId, imageId, boxes, imageUrls, index }
+
 // --- PDF Reading State ---
 let pdfState = {
     url: null,
@@ -58,13 +61,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
                 break;
             case 'speechStopped':
-                 clearActiveSpeechTab();
-                 chrome.runtime.sendMessage({ action: 'speechStopped' });
-                 if (pdfState.isPlaying && pdfState.readingMode === 'continuous') {
-                     playNextPdfPage();
-                 }
+                // If we are mid bubble session, step next, otherwise original behavior
+                if (bubbleSession) {
+                    bubbleSession.index += 1;
+                    if (bubbleSession.index < bubbleSession.imageUrls.length) {
+                        startReadingCurrentBubble();
+                    } else {
+                        // Finished the panel
+                        const tabId = bubbleSession.tabId;
+                        bubbleSession = null;
+                        if (tabId) {
+                            sendMessageToContentScript(tabId, { action: 'clearBubbleHighlights' });
+                            sendMessageToContentScript(tabId, { action: 'advancePanel' });
+                        }
+                    }
+                } else {
+                    clearActiveSpeechTab();
+                    chrome.runtime.sendMessage({ action: 'speechStopped' });
+                    if (pdfState.isPlaying && pdfState.readingMode === 'continuous') {
+                        playNextPdfPage();
+                    }
+                }
                 break;
-            
             case 'pdfPageTextExtracted':
                 pdfState.text_pages[message.pageNumber - 1] = message.text;
                 break;
@@ -76,7 +94,74 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 break;
             case 'bubbleDetectionResult':
                 console.log('[Background Script] Received bubble detection result.');
-                handleReadBubbleImages(message.imageUrls);
+                // Attach to active tab and setup overlay
+                if (activeSpeechTabId !== null) {
+                    const tabId = activeSpeechTabId;
+
+                    // Sort bubbles: top-to-bottom; within the same row, left-to-right
+                    const sortBubbles = (boxes = [], imageUrls = []) => {
+                        if (!boxes.length) return { boxes, imageUrls };
+                        const items = boxes.map((b, i) => ({
+                            i,
+                            b,
+                            minX: b.minX,
+                            minY: b.minY,
+                            maxX: b.maxX,
+                            maxY: b.maxY,
+                            cx: (b.minX + b.maxX) / 2,
+                            cy: (b.minY + b.maxY) / 2,
+                            h: (b.maxY - b.minY)
+                        }));
+                        items.sort((a, b) => a.minY - b.minY);
+                        const heights = items.map(it => it.h).sort((a, b) => a - b);
+                        const medianH = heights[Math.floor(heights.length / 2)] || 20;
+                        const rowThreshold = Math.max(20, medianH * 0.6);
+                        const rows = [];
+                        let currentRow = [];
+                        let currentRowCySum = 0;
+                        const flushRow = () => { if (currentRow.length) rows.push(currentRow.slice()); currentRow = []; currentRowCySum = 0; };
+                        for (const it of items) {
+                            if (!currentRow.length) { currentRow.push(it); currentRowCySum += it.cy; continue; }
+                            const avgCy = currentRowCySum / currentRow.length;
+                            if (Math.abs(it.cy - avgCy) <= rowThreshold) { currentRow.push(it); currentRowCySum += it.cy; }
+                            else { flushRow(); currentRow.push(it); currentRowCySum += it.cy; }
+                        }
+                        flushRow();
+                        // sort each row left-to-right
+                        for (const row of rows) row.sort((a, b) => a.minX - b.minX);
+                        const ordered = rows.flat();
+                        const newBoxes = ordered.map(o => o.b);
+                        const newUrls = ordered.map(o => imageUrls[o.i]);
+                        return { boxes: newBoxes, imageUrls: newUrls };
+                    };
+
+                    const { boxes: sortedBoxes, imageUrls: sortedUrls } = sortBubbles(message.boxes || [], message.imageUrls || []);
+
+                    bubbleSession = {
+                        tabId,
+                        imageId: message.imageId || message.sourceImageUrl || 'img',
+                        boxes: sortedBoxes,
+                        imageUrls: sortedUrls,
+                        index: 0
+                    };
+
+                    if (bubbleSession.boxes.length > 0) {
+                        sendMessageToContentScript(tabId, {
+                            action: 'setupBubbleHighlights',
+                            imageUrl: message.sourceImageUrl || '',
+                            imageId: bubbleSession.imageId,
+                            boxes: bubbleSession.boxes
+                        }, () => {
+                            startReadingCurrentBubble();
+                        });
+                    } else if (bubbleSession.imageUrls.length > 0) {
+                        // Fallback: no boxes provided, read concatenated
+                        handleReadBubbleImages(bubbleSession.imageUrls);
+                    }
+                } else {
+                    // No active speech tab, just read them combined as before
+                    handleReadBubbleImages(message.imageUrls || []);
+                }
                 break;
         }
     } else {
@@ -202,24 +287,61 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     chrome.runtime.sendMessage({
                         target: 'offscreen',
                         action: 'findBubblesAndCrop',
-                        imageUrl: message.imageUrl
+                        imageUrl: message.imageUrl,
+                        imageId: message.imageId
                     });
                 });
                 sendResponse({ success: true });
                 break;
+            case 'updateComicState':
+                // Track active tab for comic reading so we can route highlights
+                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                    if (tabs && tabs[0]) {
+                        activeSpeechTabId = tabs[0].id;
+                    }
+                });
+                // Warm up offscreen doc and OCR worker early to reduce latency
+                setupOffscreenDocument();
+                sendResponse({ success: true });
+                break;
         }
     }
-    return true;
+    // Only indicate async when we actually responded asynchronously above
+    return false;
 });
+
+async function startReadingCurrentBubble() {
+    if (!bubbleSession) return;
+    const { tabId, imageUrls, index } = bubbleSession;
+    if (index < 0 || index >= imageUrls.length) return;
+
+    // Highlight in content
+    sendMessageToContentScript(tabId, {
+        action: 'highlightBubbleIndex',
+        imageId: bubbleSession.imageId,
+        index
+    });
+
+    // Read this bubble only; mark as bubble for faster OCR (skip preprocess)
+    await setupOffscreenDocument();
+    chrome.runtime.sendMessage({
+        target: 'offscreen',
+        action: 'readImageText',
+        imageUrl: imageUrls[index],
+        rate: lastRate || 1.0,
+        voice: lastVoice || null,
+        returnOcrResult: false,
+        isBubble: true
+    });
+}
 
 async function handleReadBubbleImages(imageUrls) {
     console.log(`[Background Script] Processing ${imageUrls.length} bubble images.`);
     let combinedText = '';
     for (const imageUrl of imageUrls) {
-        const text = await new Promise((resolve, reject) => {
+        const text = await new Promise((resolve) => {
             const messageListener = (message) => {
                 if (message.action === 'ocrResult') {
-                    console.log('[Background Script] Received OCR result for a bubble.');
                     chrome.runtime.onMessage.removeListener(messageListener);
                     resolve(message.text);
                 }
@@ -232,16 +354,15 @@ async function handleReadBubbleImages(imageUrls) {
                     imageUrl: imageUrl,
                     rate: lastRate || 1.0,
                     voice: lastVoice || null,
-                    returnOcrResult: true // Special flag for this handler
+                    returnOcrResult: true
                 });
             });
         });
-        if (text) {
-            combinedText += text + ' ';
-        }
+        if (text) combinedText += text + ' ';
     }
-    console.log('[Background Script] All bubbles processed. Final text:', combinedText);
-    handleStartReading(combinedText.trim(), lastRate, lastVoice);
+    if (combinedText.trim()) {
+        handleStartReading(combinedText.trim(), lastRate, lastVoice);
+    }
 }
 
 

@@ -5,6 +5,55 @@ let currentIndex = 0;
 let currentRate = 1.0;
 let currentVoice = null; // Store the SpeechSynthesisVoice object
 
+// Persistent Tesseract worker state for speed
+let tessWorker = null;
+let tessJobHandlers = new Map();
+let tessReady = null;
+function ensureTesseractWorker() {
+    if (tessReady) return tessReady;
+    tessReady = new Promise((resolve, reject) => {
+        try {
+            const workerPath = chrome.runtime.getURL('libs/worker.min.js');
+            tessWorker = new Worker(workerPath);
+
+            tessWorker.onmessage = (e) => {
+                const { jobId, status, data } = e.data || {};
+                if (!jobId) return;
+                const handler = tessJobHandlers.get(jobId);
+                if (!handler) return;
+                if (status === 'resolve') { handler.resolve(data); tessJobHandlers.delete(jobId); }
+                else if (status === 'reject') { handler.reject(data); tessJobHandlers.delete(jobId); }
+                else if (status === 'progress') {
+                    const s = (data && data.status) || 'progress';
+                    const p = (data && data.progress) != null ? data.progress : 0;
+                    console.log(`[Tesseract] ${s}: ${Math.round(p * 100)}%`);
+                }
+            };
+
+            const send = (action, payload, transfer=[]) => new Promise((resolve2, reject2) => {
+                const jobId = `job-${Math.random()}`;
+                tessJobHandlers.set(jobId, { resolve: resolve2, reject: reject2 });
+                tessWorker.postMessage({ workerId: 'manual', jobId, action, payload }, transfer);
+            });
+
+            (async () => {
+                await send('load', { options: { 
+                    corePath: chrome.runtime.getURL('libs/tesseract-core.wasm.js'),
+                    workerPath,
+                    logging: { debug: false, info: false, warn: false, error: false }
+                } });
+                await send('loadLanguage', { langs: 'eng', options: { langPath: chrome.runtime.getURL('libs/'), gzip: true } });
+                await send('initialize', { langs: 'eng', oem: 1 });
+                await send('setParameters', { params: { tessedit_pageseg_mode: '6' } });
+                resolve({ send });
+            })().catch(reject);
+        } catch (err) {
+            reject(err);
+        }
+    });
+    return tessReady;
+}
+
 let opencvSandboxIframe = null;
 let opencvSandboxReadyPromise = null;
 let opencvSandboxResolvers = {}; // To store resolve/reject for messages to sandbox
@@ -32,7 +81,8 @@ async function initOpenCVSandbox() {
             // Now that the sandbox is ready, send it the required data.
             opencvSandboxIframe.contentWindow.postMessage({
                 action: 'initialize',
-                bubbleDetectorUrl: chrome.runtime.getURL('scripts/bubble-detector.js')
+                // Use the existing onnx detector module we ship
+                bubbleDetectorUrl: chrome.runtime.getURL('scripts/onnx-bubble-detector.js')
             }, '*');
             resolve();
         };
@@ -46,15 +96,30 @@ async function initOpenCVSandbox() {
         const message = event.data;
         console.log('[Offscreen] Received message from sandbox:', message);
 
-        if (message.action && opencvSandboxResolvers[message.action]) {
-            opencvSandboxResolvers[message.action](message);
-        } else if (message.action === 'bubbleDetectionResult' && opencvSandboxResolvers.processImageForBubbles) {
-            opencvSandboxResolvers.processImageForBubbles.resolve(message);
-        } else if (message.action === 'imagePreprocessed' && opencvSandboxResolvers.imagePreprocessed) {
-            opencvSandboxResolvers.imagePreprocessed(message);
-        } else if (message.action === 'error' && opencvSandboxResolvers.processImageForBubbles) {
+        if (message.action === 'opencvReady' && typeof opencvSandboxResolvers['opencvReady'] === 'function') {
+            opencvSandboxResolvers['opencvReady']();
+            opencvSandboxResolvers['opencvReady'] = null;
+            return;
+        }
+
+        if (message.action === 'bubbleDetectionResult' && opencvSandboxResolvers.processImageForBubbles) {
+            try { opencvSandboxResolvers.processImageForBubbles.resolve(message); } finally { opencvSandboxResolvers.processImageForBubbles = null; }
+            return;
+        }
+
+        if (message.action === 'imagePreprocessed' && opencvSandboxResolvers.imagePreprocessed) {
+            try { opencvSandboxResolvers.imagePreprocessed.resolve(message); } finally { opencvSandboxResolvers.imagePreprocessed = null; }
+            return;
+        }
+
+        if (message.action === 'error') {
             console.error('[Offscreen] Received error from sandbox:', message.error);
-            opencvSandboxResolvers.processImageForBubbles.reject(new Error(message.error));
+            if (message.originalAction === 'processImageForBubbles' && opencvSandboxResolvers.processImageForBubbles) {
+                try { opencvSandboxResolvers.processImageForBubbles.reject(new Error(message.error)); } finally { opencvSandboxResolvers.processImageForBubbles = null; }
+            } else if (message.originalAction === 'preprocessImageForOCR' && opencvSandboxResolvers.imagePreprocessed) {
+                try { opencvSandboxResolvers.imagePreprocessed.reject(new Error(message.error)); } finally { opencvSandboxResolvers.imagePreprocessed = null; }
+            }
+            return;
         }
     });
     
@@ -358,64 +423,46 @@ async function imageUrlToUint8Array(url) {
 // --- OCR and Speech ---
 // This function has been completely rewritten to manually manage the Tesseract worker,
 // bypassing the buggy Tesseract.createWorker() in a Manifest V3 environment.
-async function recognizeAndSpeak(imageUrl, rate, voiceDetails, returnOcrResult = false) {
-    console.log('[Offscreen] Starting OCR process. Delegating preprocessing to sandbox.');
-    let worker;
+async function recognizeAndSpeak(imageUrl, rate, voiceDetails, returnOcrResult = false, isBubble = false) {
+    console.log('[Offscreen] Starting OCR process.', isBubble ? '(bubble crop)' : '(full image)');
 
     try {
-        // 1. Initialize the sandbox and wait for it to be ready
-        await initOpenCVSandbox();
-        console.log('[Offscreen] Sandbox is ready. Sending image for preprocessing.');
+        let processedImageUrl = null;
 
-        // 2. Send the image to the sandbox for preprocessing and wait for the result
-        const preprocessPromise = new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('Image preprocessing timed out.')), 15000);
-            
-            opencvSandboxResolvers.imagePreprocessed = (message) => {
-                clearTimeout(timeout);
-                resolve(message.processedImageUrl);
-            };
-            
-            opencvSandboxIframe.contentWindow.postMessage({
-                action: 'preprocessImageForOCR',
-                imageUrl: imageUrl
-            }, '*');
-        });
-
-        const processedImageUrl = await preprocessPromise;
-        console.log('[Offscreen] Received preprocessed image from sandbox.');
-
-        if (!processedImageUrl) {
-            throw new Error('Sandbox did not return a preprocessed image.');
+        if (!isBubble) {
+            // For full images, run preprocessing in the sandbox
+            await initOpenCVSandbox();
+            console.log('[Offscreen] Sandbox is ready. Sending image for preprocessing.');
+            const fetched = await fetch(imageUrl);
+            const blob = await fetched.blob();
+            const imageBitmap = await createImageBitmap(blob);
+            const preprocessPromise = new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    if (opencvSandboxResolvers.imagePreprocessed) {
+                        opencvSandboxResolvers.imagePreprocessed = null;
+                    }
+                    reject(new Error('Image preprocessing timed out.'));
+                }, 30000);
+                opencvSandboxResolvers.imagePreprocessed = {
+                    resolve: (message) => { clearTimeout(timeout); opencvSandboxResolvers.imagePreprocessed = null; resolve(message.processedImageUrl); },
+                    reject: (err) => { clearTimeout(timeout); opencvSandboxResolvers.imagePreprocessed = null; reject(err); }
+                };
+                opencvSandboxIframe.contentWindow.postMessage({ action: 'preprocessImageForOCR', imageBitmap }, '*', [imageBitmap]);
+            });
+            processedImageUrl = await preprocessPromise;
+        } else {
+            // Bubble crops are already small; skip extra preprocessing for speed
+            processedImageUrl = imageUrl;
         }
 
-        // 3. Now, proceed with Tesseract OCR using the processed image
-        const workerPath = chrome.runtime.getURL('libs/worker.min.js');
-        worker = new Worker(workerPath);
+        if (!processedImageUrl) throw new Error('No image available for OCR');
 
-        const doWork = (payload) => new Promise((resolve, reject) => {
-            const jobId = `job-${Math.random()}`;
-            worker.onerror = (err) => reject(err);
-            worker.onmessage = (e) => {
-                const { jobId: resJobId, status, data } = e.data;
-                if (resJobId === jobId) {
-                    if (status === 'resolve') resolve(data);
-                    else if (status === 'reject') reject(data);
-                    else if (status === 'progress') console.log(`[Tesseract] ${data.status}: ${Math.round(data.progress * 100)}%`);
-                }
-            };
-            worker.postMessage({ workerId: 'manual', jobId, action: payload.action, payload: payload.payload });
-        });
+        // Ensure Tesseract worker is ready (loaded once, reused)
+        const { send } = await ensureTesseractWorker();
 
-        await doWork({ action: 'load', payload: { options: { corePath: chrome.runtime.getURL('libs/tesseract-core.wasm.js'), workerPath } } });
-        await doWork({ action: 'loadLanguage', payload: { langs: 'eng', options: { langPath: chrome.runtime.getURL('libs/'), gzip: true } } });
-        await doWork({ action: 'initialize', payload: { langs: 'eng', oem: 1 } });
-
-        console.log('[Offscreen] Sending "recognize" message to Tesseract worker.');
-        const { text } = await doWork({
-            action: 'recognize',
-            payload: { image: processedImageUrl, options: { tessedit_pageseg_mode: 3 } }
-        });
+        console.log('[Offscreen] Sending "recognize" to Tesseract worker.');
+        const imgUint8 = await imageUrlToUint8Array(processedImageUrl);
+        const { text } = await send('recognize', { image: imgUint8, options: {}, output: { debug: false } }, [imgUint8.buffer]);
 
         console.log('[Offscreen] Tesseract recognized text:', text);
 
@@ -433,10 +480,6 @@ async function recognizeAndSpeak(imageUrl, rate, voiceDetails, returnOcrResult =
             chrome.runtime.sendMessage({ action: 'ocrResult', text: '' });
         } else {
             chrome.runtime.sendMessage({ action: 'speechStopped', error: error.message || 'Unknown error' });
-        }
-    } finally {
-        if (worker) {
-            worker.terminate();
         }
     }
 }
@@ -485,12 +528,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return false; // It will send messages back as it processes
         
         case 'readImageText':
-            recognizeAndSpeak(message.imageUrl, message.rate, message.voice, message.returnOcrResult);
+            recognizeAndSpeak(message.imageUrl, message.rate, message.voice, message.returnOcrResult, message.isBubble === true);
             sendResponse({ success: true });
             return false;
 
         case 'findBubblesAndCrop':
-            findBubblesAndCrop(message.imageUrl);
+            findBubblesAndCrop(message.imageUrl, message.imageId);
             sendResponse({ success: true });
             return false;
 
@@ -501,7 +544,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-async function findBubblesAndCrop(imageUrl) {
+async function findBubblesAndCrop(imageUrl, imageId) {
     console.log('[Offscreen] findBubblesAndCrop: Function called.');
     try {
         console.log('[Offscreen] findBubblesAndCrop: Awaiting sandbox initialization...');
@@ -522,11 +565,16 @@ async function findBubblesAndCrop(imageUrl) {
 
         console.log('[Offscreen] findBubblesAndCrop: Sending "processImageForBubbles" message to sandbox with ImageBitmap.');
         const processBubblesPromise = new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('Bubble detection timed out.')), 20000);
+            const timeout = setTimeout(() => {
+                if (opencvSandboxResolvers.processImageForBubbles) {
+                    opencvSandboxResolvers.processImageForBubbles = null;
+                }
+                reject(new Error('Bubble detection timed out.'));
+            }, 90000);
 
             opencvSandboxResolvers.processImageForBubbles = {
-                resolve: (result) => { clearTimeout(timeout); resolve(result); },
-                reject: (error) => { clearTimeout(timeout); reject(error); }
+                resolve: (result) => { clearTimeout(timeout); opencvSandboxResolvers.processImageForBubbles = null; resolve(result); },
+                reject: (error) => { clearTimeout(timeout); opencvSandboxResolvers.processImageForBubbles = null; reject(error); }
             };
             
             // Post the message and transfer the ImageBitmap to avoid copying
@@ -536,21 +584,21 @@ async function findBubblesAndCrop(imageUrl) {
             }, '*', [imageBitmap]);
         });
 
-        const { imageUrls: bubbleImages } = await processBubblesPromise;
+        const { imageUrls: bubbleImages, boxes } = await processBubblesPromise;
 
         console.log(`[Offscreen] Detected and cropped ${bubbleImages.length} bubbles.`);
 
-        if (bubbleImages.length === 0) {
+        if (!bubbleImages || bubbleImages.length === 0) {
             console.log('[Offscreen] No bubbles found, falling back to original image.');
-            chrome.runtime.sendMessage({ action: 'bubbleDetectionResult', imageUrls: [imageUrl] });
+            chrome.runtime.sendMessage({ action: 'bubbleDetectionResult', imageUrls: [imageUrl], boxes: [], sourceImageUrl: imageUrl, imageId });
             return;
         }
 
-        chrome.runtime.sendMessage({ action: 'bubbleDetectionResult', imageUrls: bubbleImages });
+        chrome.runtime.sendMessage({ action: 'bubbleDetectionResult', imageUrls: bubbleImages, boxes, sourceImageUrl: imageUrl, imageId });
 
     } catch (error) {
         console.error('[Offscreen] Error during bubble detection process:', error);
-        chrome.runtime.sendMessage({ action: 'bubbleDetectionResult', imageUrls: [imageUrl] });
+        chrome.runtime.sendMessage({ action: 'bubbleDetectionResult', imageUrls: [imageUrl], boxes: [], sourceImageUrl: imageUrl, imageId });
     }
 }
 

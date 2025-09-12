@@ -3,6 +3,12 @@
   "name": "Manga reader",
   "version": "1.0",
   "description": "Reads visible text on the screen using the browser's Text-to-Speech.",
+  "cross_origin_embedder_policy": {
+    "value": "require-corp"
+  },
+  "cross_origin_opener_policy": {
+    "value": "same-origin"
+  },
   "permissions": ["activeTab","scripting", "tabs","offscreen", "storage"],
   "background": {
     "service_worker": "background.js"
@@ -28,11 +34,9 @@
         "offscreen.html",
         "opencv_sandbox.html",
         "opencv_sandbox.js",
-        "libs/pdfjs/pdf.worker.min.js",
-        "libs/worker.min.js",
-        "libs/tesseract.min.js",
-        "libs/tesseract-core.wasm.js",
-        "scripts/bubble-detector.js",
+        "libs/*",
+        "models/*",
+        "scripts/onnx-bubble-detector.js",
         "scripts/tesseract-bridge.js"
       ],
       "matches": [
@@ -45,7 +49,7 @@
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
-    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';"
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; object-src 'self'; child-src 'self';"
   },
   "commands": {
     "toggle-play-pause": {

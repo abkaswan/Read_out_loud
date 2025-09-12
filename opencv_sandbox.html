@@ -3,9 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <title>OpenCV Sandbox</title>
+  <script>
+    // Define before loading OpenCV so its runtime calls this hook.
+    self.Module = {
+      onRuntimeInitialized: function() {
+        // Flag used by opencv_sandbox.js to complete setup
+        window.__cvReady = true;
+      }
+    };
+  </script>
   <script src="libs/opencv.min.js"></script>
+  <script src="libs/ort.min.js"></script>
   <script src="opencv_sandbox.js" defer></script>
-</head>
 </head>
 <body>
     <canvas id="processingCanvas" style="display: none;"></canvas>

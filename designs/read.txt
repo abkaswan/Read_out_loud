@@ -1,0 +1,9 @@
+Success! The model is running, and we're seeing logs from preprocess and postprocess. The key is this line: Found 0 bubbles above 
+  threshold 0.5. This is expected because we're feeding it a blank, dummy image.
+
+  The next step is to understand the exact structure of the output tensors so we can correctly parse them. The console is currently
+  collapsing them into Je objects.
+
+  I'll add more detailed logging to the postprocess method in onnx-bubble-detector.js to print the dimensions (dims) and a small sample of
+  the data from the output tensors. This will give us the final piece of the puzzle.
+

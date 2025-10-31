@@ -57,6 +57,7 @@ const comicRefreshBtn = document.getElementById('comic-refreshBtn');
 const comicVoiceSelect = document.getElementById('comic-voiceSelect');
 const comicSpeedRange = document.getElementById('comic-speedRange');
 const comicSpeedValue = document.getElementById('comic-speedValue');
+const comicOcrModeSelect = document.getElementById('comic-ocr-mode');
 
 let comicSettings = {};
 
@@ -120,6 +121,9 @@ function applyComicSettingsToUI() {
             }
         }, 50);
     }
+
+    // OCR Recognizer dropdown (stored independently in chrome.storage)
+    loadRecognizerMode();
 }
 
 function setComicButtonState(playing) {
@@ -211,6 +215,27 @@ comicSpeedRange.addEventListener('input', () => {
     comicSettings.rate = rate;
     saveComicSettings();
 });
+
+// Recognizer dropdown persistence
+async function loadRecognizerMode() {
+    try {
+        const data = await chrome.storage.local.get('ppocr_recognizer_mode');
+        const mode = data.ppocr_recognizer_mode || 'ppocr';
+        if (comicOcrModeSelect) {
+            comicOcrModeSelect.value = mode;
+        }
+    } catch (e) {}
+}
+
+if (comicOcrModeSelect) {
+    comicOcrModeSelect.addEventListener('change', async () => {
+        const mode = comicOcrModeSelect.value || 'ppocr';
+        await chrome.storage.local.set({ ppocr_recognizer_mode: mode });
+        // Proactively notify offscreen to switch mode immediately
+        chrome.runtime.sendMessage({ target: 'offscreen', action: 'ppocrSetRecognizerMode', mode });
+        console.log('[Popup] Recognizer mode set to', mode);
+    });
+}
 
 
 
@@ -640,6 +665,7 @@ comicModeBtn.addEventListener('click', () => {
     textModeBtn.classList.remove('active');
     comicModeBtn.classList.add('active');
     loadComicSettings(); // Load settings when switching to comic mode
+    loadRecognizerMode();
     updateComicUI();
 });
 

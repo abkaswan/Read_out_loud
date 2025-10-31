@@ -9,16 +9,31 @@ let currentVoice = null; // Store the SpeechSynthesisVoice object
 const PPOCR_FLAGS = {
     enabled: true,   // Feature flag to gate PP-OCR path later
     debug: true,     // Verbose logs
-    fallbackTesseract: false // Try Tesseract when PP-OCR returns no text (boxes>0)
+    fallbackTesseract: false, // Try Tesseract when PP-OCR returns no text (boxes>0)
+    recognizerMode: 'ppocr' // 'ppocr' | 'tesseract' | 'hybrid'
 };
 function ppocrLog(...a) { if (PPOCR_FLAGS.debug) console.log('[Offscreen][PP-OCR]', ...a); }
 
+// Quick quality heuristic: prefer mostly alphabetic content with reasonable length
+function evaluateLinesQuality(lines) {
+    const text = Array.isArray(lines) ? lines.join(' ').trim() : (lines || '').toString();
+    const letters = (text.match(/[A-Za-z]/g) || []).length;
+    const digits = (text.match(/[0-9]/g) || []).length;
+    const symbols = (text.match(/[^A-Za-z0-9\s]/g) || []).length;
+    const total = letters + digits + symbols;
+    const alphaRatio = total > 0 ? (letters / total) : 0;
+    const length = text.length;
+    return { text, letters, digits, symbols, total, alphaRatio, length };
+}
+
 async function loadPpocrFlags() {
     try {
-        const stored = await chrome.storage?.local.get(['ppocr_enabled', 'debug_ppocr', 'ppocr_fallback_tesseract']);
+        const stored = await chrome.storage?.local.get(['ppocr_enabled', 'debug_ppocr', 'ppocr_fallback_tesseract', 'ppocr_recognizer_mode']);
         if (typeof stored.ppocr_enabled === 'boolean') PPOCR_FLAGS.enabled = stored.ppocr_enabled;
         if (typeof stored.debug_ppocr === 'boolean') PPOCR_FLAGS.debug = stored.debug_ppocr;
         if (typeof stored.ppocr_fallback_tesseract === 'boolean') PPOCR_FLAGS.fallbackTesseract = stored.ppocr_fallback_tesseract;
+        if (typeof stored.ppocr_recognizer_mode === 'string') PPOCR_FLAGS.recognizerMode = stored.ppocr_recognizer_mode;
+        ppocrLog('Flags loaded', { recognizerMode: PPOCR_FLAGS.recognizerMode, fallbackTesseract: PPOCR_FLAGS.fallbackTesseract });
     } catch (e) {
         // ignore
     }
@@ -572,7 +587,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     await engine.prefetch(message.imageUrl);
                     sendResponse({ success: true });
                 } catch (err) {
-                    console.error('[Offscreen] prefetchPanel failed:', err);
+                    console.error('[Offscreen] prefetchPanel failed:', err?.name || err, err?.message || '');
                     sendResponse({ success: false, error: err?.message });
                 }
             })();
@@ -582,38 +597,96 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             (async () => {
                 try {
                     const engine = await ensurePpocrEngine();
-                    let result = await engine.recognize(message.imageUrl);
-                    let lines = result.lines || [];
-                    let boxes = result.boxes || [];
-                    ppocrLog('RecognizePanel meta:', { boxes: boxes.length, lines: lines.length });
-                    // Fallback: only if enabled AND detection found boxes but recognition yielded no text
-                    if (PPOCR_FLAGS.fallbackTesseract && !lines.length && boxes.length > 0) {
-                        ppocrLog('PP-OCR returned no lines; attempting Tesseract fallback...');
-                        try {
+                    // Always detect with PP-OCR
+                    const { boxes, image } = await engine.detect(message.imageUrl, true);
+                    let lines = [];
+                    const mode = PPOCR_FLAGS.recognizerMode || 'ppocr';
+                    ppocrLog('recognizePanel: using recognizer mode', mode);
+
+                    if (mode === 'tesseract') {
+                        // Recognize each detected box with Tesseract using rectangle option (no canvas)
+                        if (boxes.length) {
                             const { send } = await ensureTesseractWorker();
-                            const imgUint8 = await imageUrlToUint8Array(message.imageUrl);
-                            const { text } = await send('recognize', { image: imgUint8, options: {}, output: { debug: false } }, [imgUint8.buffer]);
-                            const t = (text || '').trim();
-                            if (t) {
-                                lines = [t];
-                                boxes = [];
-                                ppocrLog('Tesseract fallback succeeded.');
-                            } else {
-                                ppocrLog('Tesseract fallback produced empty text.');
+                            const u8Full = await imageUrlToUint8Array(message.imageUrl);
+                            for (const b of boxes) {
+                                const w = Math.max(1, b.maxX - b.minX + 1), h = Math.max(1, b.maxY - b.minY + 1);
+                                const rect = { left: b.minX, top: b.minY, width: w, height: h };
+                                try {
+                                    const { text } = await send('recognize', { image: u8Full, options: { rectangle: rect }, output: { debug: false } });
+                                    const t = (text || '').trim();
+                                    if (t) lines.push(t);
+                                } catch {}
                             }
-                        } catch (fbErr) {
-                            console.warn('[Offscreen][PP-OCR] Tesseract fallback failed:', fbErr);
+                        }
+                    } else if (mode === 'hybrid') {
+                        // PP-OCR first
+                        const pp = await engine.recognizeBoxesPpocr(image, boxes);
+                        lines = pp.lines || [];
+                        const q = evaluateLinesQuality(lines);
+                        const low = lines.length === 0 || q.alphaRatio < 0.5 || q.letters < 5;
+                        if (low && boxes.length) {
+                            const { send } = await ensureTesseractWorker();
+                            const u8Full = await imageUrlToUint8Array(message.imageUrl);
+                            const tessLines = [];
+                            for (const b of boxes) {
+                                const w = Math.max(1, b.maxX - b.minX + 1), h = Math.max(1, b.maxY - b.minY + 1);
+                                const rect = { left: b.minX, top: b.minY, width: w, height: h };
+                                try {
+                                    const { text } = await send('recognize', { image: u8Full, options: { rectangle: rect }, output: { debug: false } });
+                                    const t = (text || '').trim();
+                                    if (t) tessLines.push(t);
+                                } catch {}
+                            }
+                            const tq = evaluateLinesQuality(tessLines);
+                            if (tq.letters > q.letters || tq.alphaRatio > q.alphaRatio + 0.1) {
+                                lines = tessLines;
+                                ppocrLog('Hybrid: chose Tesseract per-box result.');
+                            } else {
+                                ppocrLog('Hybrid: kept PP-OCR per-box result.');
+                            }
+                        }
+                    } else {
+                        // Default: PP-OCR per box
+                        const pp = await engine.recognizeBoxesPpocr(image, boxes);
+                        lines = pp.lines || [];
+                    }
+
+                    ppocrLog('RecognizePanel meta:', { boxes: boxes.length, lines: lines.length, recognizer: mode });
+                    // Optional global fallback in ppocr mode
+                    if (mode === 'ppocr' && PPOCR_FLAGS.fallbackTesseract) {
+                        const q = evaluateLinesQuality(lines);
+                        const need = (lines.length === 0 && boxes.length) || (q.alphaRatio < 0.5 || q.letters < 5);
+                        if (need) {
+                            try {
+                                const { send } = await ensureTesseractWorker();
+                                const u8 = await imageUrlToUint8Array(message.imageUrl);
+                                const { text } = await send('recognize', { image: u8, options: {}, output: { debug: false } }, [u8.buffer]);
+                                const t = (text || '').trim();
+                                if (t) lines = [t];
+                            } catch {}
                         }
                     }
+
                     ppocrLog('RecognizePanel result:', { linesCount: (lines||[]).length, sample: (lines||[])[0] || '' });
                     chrome.runtime.sendMessage({ action: 'panelOcrReady', imageUrl: message.imageUrl, lines, boxes });
                     sendResponse({ success: true });
                 } catch (err) {
-                    console.error('[Offscreen] recognizePanel failed:', err);
+                    console.error('[Offscreen] recognizePanel failed:', err?.name || err, err?.message || '');
                     sendResponse({ success: false, error: err?.message });
                 }
             })();
             return true;
+        case 'ppocrSetRecognizerMode':
+            // Immediate in-memory switch from popup; still persisted in storage there
+            if (typeof message.mode === 'string') {
+                PPOCR_FLAGS.recognizerMode = message.mode;
+                ppocrLog('Recognizer mode updated via message:', message.mode);
+                sendResponse({ success: true });
+                return false;
+            } else {
+                sendResponse({ success: false, error: 'Invalid mode' });
+                return false;
+            }
 
         case 'speak':
             (async () => {

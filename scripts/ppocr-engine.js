@@ -190,6 +190,33 @@
       return res || { lines: [], boxes: [] };
     }
 
+    // Public: detect only, optionally returning the loaded image for reuse
+    async detect(imageUrl, includeImage = false) {
+      await this.warmup();
+      const img = await this._loadImage(imageUrl);
+      const boxes = await this._runDet(img.bitmap);
+      return includeImage ? { boxes, image: img } : { boxes };
+    }
+
+    // Public: recognize boxes on a given image using PP-OCR recognizer
+    async recognizeBoxesPpocr(image, boxes) {
+      await this.warmup();
+      const bitmap = image.bitmap || image;
+      const lines = [];
+      for (const b of (boxes || [])) {
+        try {
+          const { text, conf } = await this._runRecOnCrop(bitmap, b);
+          const t = (text || '').trim();
+          if (t && t.length >= this.minLineLen && conf >= this.minRecConf) {
+            lines.push(t);
+          }
+        } catch (e) {
+          this.log('PP-OCR rec failed for box', b, e);
+        }
+      }
+      return { lines, boxes };
+    }
+
     // --- OCR pipeline ---
     async _ensureDict() {
       if (this.dict) return;

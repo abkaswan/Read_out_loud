@@ -389,8 +389,7 @@ if (typeof window.contentScriptLoaded === 'undefined') {
     }
 
     async function readCurrentPanel() {
-        console.log('[Content Script] Reading current panel via bubble pipeline...');
-        injectScripts();
+        console.log('[Content Script] Reading current panel via PP-OCR...');
         const panelElements = document.querySelectorAll(comicState.selector);
         if (!panelElements || panelElements.length === 0) {
             console.error('[Content Script] Cannot find panel elements with selector:', comicState.selector);
@@ -416,10 +415,22 @@ if (typeof window.contentScriptLoaded === 'undefined') {
             return;
         }
         try {
-            const imageId = `${imageElement.src}#${Date.now()}`;
-            chrome.runtime.sendMessage({ action: 'processImageForBubbles', imageUrl: imageElement.src, imageId });
+            // Prefetch next few panels to make recognition instant
+            const prefetchCount = 3;
+            for (let i = 1; i <= prefetchCount; i++) {
+                const idx = comicState.panel - 1 + i;
+                if (idx >= 0 && idx < panelElements.length) {
+                    const el = panelElements[idx];
+                    const img = (el.tagName === 'IMG') ? el : el.querySelector('img');
+                    if (img && img.src) {
+                        chrome.runtime.sendMessage({ target: 'offscreen', action: 'prefetchPanel', imageUrl: img.src });
+                    }
+                }
+            }
+            // Recognize current panel
+            chrome.runtime.sendMessage({ target: 'offscreen', action: 'recognizePanel', imageUrl: imageElement.src });
         } catch (error) {
-            console.error('[Content Script] Bubble pipeline failed:', error);
+            console.error('[Content Script] PP-OCR recognize failed:', error);
             if (comicState.isPlaying && comicState.autoAdvance) advanceToNextPanel();
         }
     }
@@ -428,7 +439,7 @@ if (typeof window.contentScriptLoaded === 'undefined') {
         if (autoAdvanceInterval) clearInterval(autoAdvanceInterval);
         comicState = { ...comicState, ...settings, isPlaying: true };
         readCurrentPanel();
-        // Background advances panel after bubbles finished
+        // Background advances panel after speechStopped
         chrome.runtime.sendMessage({ action: 'updateComicState', state: comicState });
     }
 

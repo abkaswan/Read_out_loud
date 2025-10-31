@@ -3,6 +3,8 @@ let creatingOffscreenDocument = null; // Promise
 let activeSpeechTabId = null; // <--- STORE THE TAB ID FOR CURRENT SPEECH
 let lastVoice = null;
 let lastRate = 1.0;
+let ppocrComicActive = false; // PP-OCR comic mode active flag
+let lastComicState = null;    // Last comic state from content
 
 // --- Bubble Reading Session State ---
 let bubbleSession = null; // { tabId, imageId, boxes, imageUrls, index }
@@ -32,16 +34,45 @@ async function setupOffscreenDocument() {
         if (creatingOffscreenDocument) {
             await creatingOffscreenDocument;
         } else {
-            creatingOffscreenDocument = chrome.offscreen.createDocument({
-                url: OFFSCREEN_DOCUMENT_PATH,
-                reasons: [chrome.offscreen.Reason.USER_MEDIA, chrome.offscreen.Reason.AUDIO_PLAYBACK],
-                justification: 'Needed for text-to-speech and PDF processing',
-            });
-            await creatingOffscreenDocument;
-            creatingOffscreenDocument = null;
+            try {
+                creatingOffscreenDocument = chrome.offscreen.createDocument({
+                    url: OFFSCREEN_DOCUMENT_PATH,
+                    reasons: [chrome.offscreen.Reason.USER_MEDIA, chrome.offscreen.Reason.AUDIO_PLAYBACK],
+                    justification: 'Needed for text-to-speech and PDF processing',
+                });
+                await creatingOffscreenDocument;
+            } catch (e) {
+                const msg = String(e?.message || e);
+                if (msg.includes('Only a single offscreen document')) {
+                    // Safe to ignore: another path created it concurrently.
+                    console.debug('[Background] Offscreen already created (ignored).');
+                } else {
+                    throw e;
+                }
+            } finally {
+                creatingOffscreenDocument = null;
+            }
         }
     }
 }
+
+// --- Warm up PP-OCR on install and startup ---
+chrome.runtime.onInstalled.addListener(() => {
+    console.log('[Background] onInstalled: warming up PP-OCR...');
+    setupOffscreenDocument()
+        .then(() => chrome.runtime.sendMessage({ target: 'offscreen', action: 'ppocrWarmup' }))
+        .catch(err => console.warn('[Background] Warmup setup failed:', err));
+});
+
+(async () => {
+    try {
+        console.log('[Background] Startup: warming up PP-OCR...');
+        await setupOffscreenDocument();
+        chrome.runtime.sendMessage({ target: 'offscreen', action: 'ppocrWarmup' });
+    } catch (e) {
+        console.warn('[Background] Startup warmup failed:', e);
+    }
+})();
 
 // --- Message Handling ---
 
@@ -76,10 +107,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     }
                 } else {
-                    clearActiveSpeechTab();
-                    chrome.runtime.sendMessage({ action: 'speechStopped' });
-                    if (pdfState.isPlaying && pdfState.readingMode === 'continuous') {
-                        playNextPdfPage();
+                    if (ppocrComicActive && activeSpeechTabId !== null) {
+                        sendMessageToContentScript(activeSpeechTabId, { action: 'advancePanel' });
+                    } else {
+                        clearActiveSpeechTab();
+                        chrome.runtime.sendMessage({ action: 'speechStopped' });
+                        if (pdfState.isPlaying && pdfState.readingMode === 'continuous') {
+                            playNextPdfPage();
+                        }
                     }
                 }
                 break;
@@ -91,6 +126,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     action: 'pdfProcessingComplete',
                     totalPages: message.totalPages
                 });
+                break;
+            case 'panelOcrReady':
+                {
+                    const lines = Array.isArray(message.lines) ? message.lines : [];
+                    const text = lines.join(' ').trim();
+                    if (text) {
+                        handleStartReading(text, lastRate || 1.0, lastVoice || null);
+                    } else {
+                        // Option: advance on empty OCR after a short delay to keep flow
+                        if (ppocrComicActive && activeSpeechTabId !== null) {
+                            setTimeout(() => {
+                                sendMessageToContentScript(activeSpeechTabId, { action: 'advancePanel' });
+                            }, 500);
+                        }
+                    }
+                }
                 break;
             case 'bubbleDetectionResult':
                 console.log('[Background Script] Received bubble detection result.');
@@ -300,6 +351,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         activeSpeechTabId = tabs[0].id;
                     }
                 });
+                // Record last state and PP-OCR activity
+                if (message.state) {
+                    lastComicState = message.state;
+                    ppocrComicActive = !!message.state.isPlaying;
+                }
                 // Warm up offscreen doc and OCR worker early to reduce latency
                 setupOffscreenDocument();
                 sendResponse({ success: true });

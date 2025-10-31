@@ -37,7 +37,9 @@
         "libs/*",
         "models/*",
         "scripts/onnx-bubble-detector.js",
-        "scripts/tesseract-bridge.js"
+        "scripts/tesseract-bridge.js",
+        "scripts/ppocr-engine.js",
+        "scripts/idb-cache.js"
       ],
       "matches": [
         "<all_urls>"

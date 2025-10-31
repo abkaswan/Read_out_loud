@@ -3,8 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <title>Offscreen</title>
+  <!-- ONNX Runtime for Web (must load before engine) -->
+  <script src="libs/ort.min.js"></script>
   <script src="libs/pdfjs/pdf.min.js"></script>
   <script src="libs/tesseract.min.js"></script>
+  <!-- PP-OCR engine and cache (loaded before offscreen.js so globals are available) -->
+  <script src="scripts/idb-cache.js"></script>
+  <script src="scripts/ppocr-engine.js"></script>
 </head>
 <body>
     <script src="offscreen.js"></script>

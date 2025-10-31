@@ -5,6 +5,50 @@ let currentIndex = 0;
 let currentRate = 1.0;
 let currentVoice = null; // Store the SpeechSynthesisVoice object
 
+// --- PP-OCR Diagnostics and Feature Flags ---
+const PPOCR_FLAGS = {
+    enabled: true,   // Feature flag to gate PP-OCR path later
+    debug: true,     // Verbose logs
+    fallbackTesseract: false // Try Tesseract when PP-OCR returns no text (boxes>0)
+};
+function ppocrLog(...a) { if (PPOCR_FLAGS.debug) console.log('[Offscreen][PP-OCR]', ...a); }
+
+async function loadPpocrFlags() {
+    try {
+        const stored = await chrome.storage?.local.get(['ppocr_enabled', 'debug_ppocr', 'ppocr_fallback_tesseract']);
+        if (typeof stored.ppocr_enabled === 'boolean') PPOCR_FLAGS.enabled = stored.ppocr_enabled;
+        if (typeof stored.debug_ppocr === 'boolean') PPOCR_FLAGS.debug = stored.debug_ppocr;
+        if (typeof stored.ppocr_fallback_tesseract === 'boolean') PPOCR_FLAGS.fallbackTesseract = stored.ppocr_fallback_tesseract;
+    } catch (e) {
+        // ignore
+    }
+}
+
+let ppocrEngine = null;
+async function ensurePpocrEngine() {
+    await loadPpocrFlags();
+    if (!PPOCR_FLAGS.enabled) {
+        ppocrLog('PP-OCR disabled by flag.');
+        throw new Error('PP-OCR disabled');
+    }
+    if (!ppocrEngine) {
+        ppocrLog('Creating PPOCREngine instance...');
+        try {
+            // Allow model overrides from storage for multilingual support
+            const stored = await chrome.storage?.local.get(['ppocr_rec_model', 'ppocr_rec_dict', 'ppocr_det_model']);
+            const detModelPath = (stored && stored.ppocr_det_model) || 'models/ppocr/det/en_ppocrv3_det.onnx';
+            const recModelPath = (stored && stored.ppocr_rec_model) || 'models/ppocr/rec/en_ppocrv3_rec.onnx';
+            const dictPath = (stored && stored.ppocr_rec_dict) || 'models/ppocr/rec/en_dict.txt';
+            ppocrLog('Engine model paths:', { detModelPath, recModelPath, dictPath });
+            ppocrEngine = new PPOCREngine({ detModelPath, recModelPath, dictPath, debug: PPOCR_FLAGS.debug });
+        } catch (e) {
+            console.error('[Offscreen][PP-OCR] Failed to create engine:', e);
+            throw e;
+        }
+    }
+    return ppocrEngine;
+}
+
 // Persistent Tesseract worker state for speed
 let tessWorker = null;
 let tessJobHandlers = new Map();
@@ -493,6 +537,84 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     console.log("Offscreen received message:", message);
     switch (message.action) {
+        case 'ppocrHealth':
+            (async () => {
+                try {
+                    const engine = await ensurePpocrEngine();
+                    const info = await engine.health();
+                    ppocrLog('Health info:', info);
+                    sendResponse({ success: true, info });
+                } catch (err) {
+                    console.error('[Offscreen] ppocrHealth failed:', err);
+                    sendResponse({ success: false, error: err?.message });
+                }
+            })();
+            return true;
+        // --- PP-OCR controls ---
+        case 'ppocrWarmup':
+            (async () => {
+                try {
+                    const engine = await ensurePpocrEngine();
+                    ppocrLog('Warmup requested...');
+                    await engine.warmup();
+                    sendResponse({ success: true });
+                } catch (err) {
+                    console.error('[Offscreen] ppocrWarmup failed:', err);
+                    sendResponse({ success: false, error: err?.message });
+                }
+            })();
+            return true;
+
+        case 'prefetchPanel':
+            (async () => {
+                try {
+                    const engine = await ensurePpocrEngine();
+                    await engine.prefetch(message.imageUrl);
+                    sendResponse({ success: true });
+                } catch (err) {
+                    console.error('[Offscreen] prefetchPanel failed:', err);
+                    sendResponse({ success: false, error: err?.message });
+                }
+            })();
+            return true;
+
+        case 'recognizePanel':
+            (async () => {
+                try {
+                    const engine = await ensurePpocrEngine();
+                    let result = await engine.recognize(message.imageUrl);
+                    let lines = result.lines || [];
+                    let boxes = result.boxes || [];
+                    ppocrLog('RecognizePanel meta:', { boxes: boxes.length, lines: lines.length });
+                    // Fallback: only if enabled AND detection found boxes but recognition yielded no text
+                    if (PPOCR_FLAGS.fallbackTesseract && !lines.length && boxes.length > 0) {
+                        ppocrLog('PP-OCR returned no lines; attempting Tesseract fallback...');
+                        try {
+                            const { send } = await ensureTesseractWorker();
+                            const imgUint8 = await imageUrlToUint8Array(message.imageUrl);
+                            const { text } = await send('recognize', { image: imgUint8, options: {}, output: { debug: false } }, [imgUint8.buffer]);
+                            const t = (text || '').trim();
+                            if (t) {
+                                lines = [t];
+                                boxes = [];
+                                ppocrLog('Tesseract fallback succeeded.');
+                            } else {
+                                ppocrLog('Tesseract fallback produced empty text.');
+                            }
+                        } catch (fbErr) {
+                            console.warn('[Offscreen][PP-OCR] Tesseract fallback failed:', fbErr);
+                        }
+                    }
+                    ppocrLog('RecognizePanel result:', { linesCount: (lines||[]).length, sample: (lines||[])[0] || '' });
+                    chrome.runtime.sendMessage({ action: 'panelOcrReady', imageUrl: message.imageUrl, lines, boxes });
+                    sendResponse({ success: true });
+                } catch (err) {
+                    console.error('[Offscreen] recognizePanel failed:', err);
+                    sendResponse({ success: false, error: err?.message });
+                }
+            })();
+            return true;
+
         case 'speak':
             (async () => {
                 try {

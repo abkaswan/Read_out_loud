@@ -45,8 +45,6 @@ To try the extension locally (load as an unpacked extension):
 4. Click "Load unpacked" and select the repository folder (`Read_out_loud`).
 5. The extension should appear in your extension list. Pin it to the toolbar for easy access.
 
-If this repository contains a build step (e.g., `npm run build`), run the build command first and load the `dist/` or `build/` folder produced by the build.
-
 ## Usage
 
 - Click the extension icon to open the popup. Use the play/pause controls to start/stop reading.
@@ -103,9 +101,6 @@ Please follow consistent code style and add brief comments where logic might be 
 - Add bookmarkable/read-later queue for long articles.
 - Add automatic language detection when reading mixed-language pages.
 - Known: voice availability is OS/browser dependent; some users may not see all voices.
-
-## License
-No license file detected in this repository. I recommend adding a LICENSE file (MIT is a common choice for small projects). If you'd like, I can add an MIT license file for you.
 
 ## Contact
 Author: @abkaswan  

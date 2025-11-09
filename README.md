@@ -110,9 +110,3 @@ No license file detected in this repository. I recommend adding a LICENSE file (
 ## Contact
 Author: @abkaswan  
 Feel free to open issues in this repository for bugs, feature requests, or help.
-
----
-Thanks — I've added this README to capture the extension's purpose and to make it easier for contributors or users to try it locally. If you want, I can:
-- add a LICENSE file (MIT or another license),
-- generate a CONTRIBUTING.md and ISSUE templates,
-- or update the README with exact build commands if you tell me whether the repo has npm scripts or a build step.
